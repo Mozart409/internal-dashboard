@@ -38,6 +38,10 @@ test: db-ready
 test-unit:
     cargo test --lib
 
+# Run one integration target, e.g. `just test-one ui`
+test-one name: db-ready
+    cargo test --test {{ name }}
+
 # Re-run the full suite on every change
 test-watch: db-ready
     cargo watch -c -x 'test --all-targets'
