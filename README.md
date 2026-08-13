@@ -51,7 +51,6 @@ Then open <http://127.0.0.1:3000>.
 | `GET/POST/PUT/DELETE /api/v1/links[/{id}]` | JSON CRUD |
 | `GET /api-docs/openapi.json` | Generated OpenAPI 3.1 document |
 | `GET /scalar` | Scalar API reference |
-| `GET /swagger-ui` | Swagger UI |
 | `POST/GET /mcp` | MCP streamable-HTTP endpoint |
 
 ## Connecting Claude to the MCP server

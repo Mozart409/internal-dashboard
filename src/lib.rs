@@ -18,7 +18,6 @@ use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_scalar::{Scalar, Servable as _};
-use utoipa_swagger_ui::SwaggerUi;
 
 use crate::events::AppState;
 
@@ -34,11 +33,21 @@ pub fn build_router(state: AppState) -> axum::Router {
         .nest("/api/v1", api::router())
         .split_for_parts();
 
+    // Scalar embeds the spec in its own page, so the document is published
+    // here explicitly for everything else that wants to read it.
+    let spec = openapi.clone();
+
     axum::Router::new()
         .merge(ui::router())
         .merge(sse::router())
         .merge(api_router)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi.clone()))
+        .route(
+            "/api-docs/openapi.json",
+            axum::routing::get(move || {
+                let spec = spec.clone();
+                async move { axum::Json(spec) }
+            }),
+        )
         .merge(Scalar::with_url("/scalar", openapi))
         .nest_service("/mcp", mcp::service(state.clone()))
         .layer(TraceLayer::new_for_http())

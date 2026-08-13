@@ -36,7 +36,6 @@ async fn main() -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("dashboard   http://{bind_addr}/");
     tracing::info!("scalar      http://{bind_addr}/scalar");
-    tracing::info!("swagger-ui  http://{bind_addr}/swagger-ui");
     tracing::info!("mcp         http://{bind_addr}/mcp");
     axum::serve(listener, app).await?;
 
