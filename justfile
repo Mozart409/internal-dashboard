@@ -116,6 +116,16 @@ vendor-assets:
     done
     echo "vendored htmx {{ htmx_version }} and htmx-ext-sse {{ htmx_sse_version }}"
 
+# --- nix --------------------------------------------------------------------
+
+# Build the dashboard package for this system
+nix-build:
+    nix build .#default
+
+# Run the flake checks: the package, the module eval checks, and on Linux the VM test
+nix-check:
+    nix flake check
+
 # --- database ---------------------------------------------------------------
 
 # Start Postgres and wait until it accepts connections
