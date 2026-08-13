@@ -1,10 +1,17 @@
 {
   description = "Rust development environment";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # nixpkgs 26.11 dropped x86_64-darwin, which is what the Intel MacBook runs.
+    # 26.05 is the last branch carrying it and is supported until the end of
+    # 2026; only that one system is resolved against it, everything else stays
+    # on unstable.
+    nixpkgs-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
+  };
 
   outputs =
-    { nixpkgs, ... }:
+    { nixpkgs, nixpkgs-darwin, ... }:
     let
       systems = [
         "x86_64-linux"
@@ -13,12 +20,16 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
+
+      nixpkgsFor =
+        system:
+        import (if system == "x86_64-darwin" then nixpkgs-darwin else nixpkgs) { inherit system; };
     in
     {
       devShells = forAllSystems (
         system:
         let
-          pkgs = import nixpkgs { inherit system; };
+          pkgs = nixpkgsFor system;
         in
         {
           default = pkgs.mkShell {
