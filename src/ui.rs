@@ -3,6 +3,7 @@
 use axum::{
     Form, Router,
     extract::{Path, Query, State},
+    http::header,
     response::IntoResponse,
 };
 use chrono::{DateTime, Utc};
@@ -13,6 +14,38 @@ use uuid::Uuid;
 use crate::error::AppError;
 use crate::events::{AppState, LinkEvent};
 use crate::models::{Link, NewLink, UpdateLink};
+
+/// Vendored htmx assets, embedded in the binary so the dashboard works with no
+/// network access and without needing `static/` next to the executable.
+/// Refresh them with `just vendor-assets`.
+const HTMX_JS: &str = include_str!("../static/htmx.min.js");
+const HTMX_SSE_JS: &str = include_str!("../static/sse.js");
+
+/// Serve an embedded script. Immutable caching is safe because the contents
+/// only change when the binary is rebuilt.
+fn javascript(body: &'static str) -> impl IntoResponse {
+    (
+        [
+            (
+                header::CONTENT_TYPE,
+                "application/javascript; charset=utf-8",
+            ),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        body,
+    )
+}
+
+// axum requires handlers to be async even when they do no awaiting.
+#[allow(clippy::unused_async)]
+async fn htmx_js() -> impl IntoResponse {
+    javascript(HTMX_JS)
+}
+
+#[allow(clippy::unused_async)]
+async fn htmx_sse_js() -> impl IntoResponse {
+    javascript(HTMX_SSE_JS)
+}
 
 /// Stylesheet for the whole dashboard, inlined into every page.
 const STYLES: &str = r#"
@@ -305,8 +338,8 @@ button:disabled {
 
 /// Full HTML document layout.
 ///
-/// Includes HTMX and the SSE extension from CDN, plus the dashboard styles
-/// with dark-mode support and a centered container.
+/// Includes the locally vendored HTMX and SSE extension, plus the dashboard
+/// styles with dark-mode support and a centered container.
 #[must_use]
 pub fn layout(title: &str, body: Markup) -> Markup {
     html! {
@@ -316,8 +349,8 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
-                script src="https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js" {}
-                script src="https://unpkg.com/htmx-ext-sse@2.2.2/sse.js" {}
+                script src="/static/htmx.min.js" {}
+                script src="/static/sse.js" {}
                 style { (maud::PreEscaped(STYLES)) }
             }
             body {
@@ -578,6 +611,8 @@ pub async fn delete_link_handler(
 /// An Axum router configured with GET /, GET /links/{id}/edit, POST /links, PUT /links/{id}, and DELETE /links/{id}.
 pub fn router() -> Router<AppState> {
     Router::new()
+        .route("/static/htmx.min.js", axum::routing::get(htmx_js))
+        .route("/static/sse.js", axum::routing::get(htmx_sse_js))
         .route("/", axum::routing::get(index))
         .route("/links/{id}/edit", axum::routing::get(edit_page))
         .route("/links", axum::routing::post(create_link))

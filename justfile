@@ -66,6 +66,31 @@ sorted-check:
 ci: fmt-check clippy test sorted-check prepare-check
     cog check
 
+# --- vendored frontend assets -----------------------------------------------
+
+htmx_version := "2.0.4"
+htmx_sse_version := "2.2.2"
+
+# Re-download htmx into static/. They are embedded at compile time via
+# include_str!, so the dashboard works with no network at runtime — this recipe
+# is only needed to upgrade the pinned versions above.
+vendor-assets:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p static
+    curl -sSLf --max-time 60 -o static/htmx.min.js \
+        "https://unpkg.com/htmx.org@{{ htmx_version }}/dist/htmx.min.js"
+    curl -sSLf --max-time 60 -o static/sse.js \
+        "https://unpkg.com/htmx-ext-sse@{{ htmx_sse_version }}/sse.js"
+    # A CDN error page would also be written happily, so check it looks like JS.
+    for f in static/htmx.min.js static/sse.js; do
+        if grep -qi '<!doctype html\|<html' "$f"; then
+            echo "$f looks like HTML, not JavaScript — download failed" >&2
+            exit 1
+        fi
+    done
+    echo "vendored htmx {{ htmx_version }} and htmx-ext-sse {{ htmx_sse_version }}"
+
 # --- database ---------------------------------------------------------------
 
 # Start Postgres and wait until it accepts connections
