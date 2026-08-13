@@ -14,6 +14,8 @@ pub enum AppError {
 }
 
 impl AppError {
+    /// HTTP status this error maps to.
+    #[must_use]
     pub fn status(&self) -> StatusCode {
         match self {
             AppError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,

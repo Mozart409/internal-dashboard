@@ -8,6 +8,9 @@ use crate::error::AppError;
 use crate::models::{Link, NewLink, UpdateLink};
 
 /// All links, newest first. `tag` filters to links carrying that tag.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the query fails.
 pub async fn list_links(pool: &PgPool, tag: Option<&str>) -> Result<Vec<Link>, AppError> {
     let links = sqlx::query_as!(
         Link,
@@ -25,6 +28,10 @@ pub async fn list_links(pool: &PgPool, tag: Option<&str>) -> Result<Vec<Link>, A
     Ok(links)
 }
 
+/// Fetch one link by id, or `None` if it does not exist.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the query fails.
 pub async fn get_link(pool: &PgPool, id: Uuid) -> Result<Option<Link>, AppError> {
     let link = sqlx::query_as!(
         Link,
@@ -42,6 +49,9 @@ pub async fn get_link(pool: &PgPool, id: Uuid) -> Result<Option<Link>, AppError>
 }
 
 /// Case-insensitive substring match across title, url and description.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the query fails.
 pub async fn search_links(pool: &PgPool, q: &str, limit: i64) -> Result<Vec<Link>, AppError> {
     let pattern = format!("%{}%", q.trim());
 
@@ -63,6 +73,10 @@ pub async fn search_links(pool: &PgPool, q: &str, limit: i64) -> Result<Vec<Link
     Ok(links)
 }
 
+/// Insert a new link and return it as stored.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the insert fails.
 pub async fn create_link(pool: &PgPool, new: &NewLink) -> Result<Link, AppError> {
     let link = sqlx::query_as!(
         Link,
@@ -85,6 +99,11 @@ pub async fn create_link(pool: &PgPool, new: &NewLink) -> Result<Link, AppError>
 /// Partial update: `None` fields keep their current value. `description` is
 /// deliberately collapsed with the existing value too, so omitting it does not
 /// clear it.
+///
+/// Returns `None` if no link has that id.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the update fails.
 pub async fn update_link(
     pool: &PgPool,
     id: Uuid,
@@ -115,6 +134,9 @@ pub async fn update_link(
 }
 
 /// Returns whether a row was actually removed.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the delete fails.
 pub async fn delete_link(pool: &PgPool, id: Uuid) -> Result<bool, AppError> {
     let result = sqlx::query!("delete from links where id = $1", id)
         .execute(pool)

@@ -30,9 +30,17 @@ clippy-watch:
 fmt:
     cargo fmt --all
 
-# Run the full test suite
-test:
+# Run the full test suite, starting Postgres first if it is not already up
+test: db-ready
     cargo test --all-targets
+
+# Only the tests that need no database (fast)
+test-unit:
+    cargo test --lib
+
+# Re-run the full suite on every change
+test-watch: db-ready
+    cargo watch -c -x 'test --all-targets'
 
 # Run the server once
 run:
@@ -109,6 +117,24 @@ db-up:
     echo "timed out waiting for postgres" >&2
     podman logs --tail 30 {{ container }} >&2
     exit 1
+
+# Start Postgres only if it is not already accepting connections.
+# Cheap enough to depend on from `test`, so a stopped container never blocks a
+# test run or a push.
+db-ready:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Probe over the network rather than via podman, so this also succeeds in CI
+    # where Postgres is a service container and podman does not exist.
+    if pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; then
+        exit 0
+    fi
+    if ! command -v podman >/dev/null 2>&1; then
+        echo "postgres is unreachable at $DATABASE_URL and podman is unavailable" >&2
+        exit 1
+    fi
+    echo "postgres is not accepting connections — starting it"
+    just db-up
 
 # Stop Postgres, keeping the data volume
 db-down:

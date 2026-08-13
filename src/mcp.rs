@@ -77,6 +77,8 @@ pub struct LinksServer {
 }
 
 impl LinksServer {
+    /// Wrap the shared application state for the MCP tools.
+    #[must_use]
     pub fn new(state: AppState) -> Self {
         Self { state }
     }
@@ -203,6 +205,7 @@ impl ServerHandler for LinksServer {}
 
 /// Factory function to create the streamable HTTP service.
 /// Used by main.rs to nest the MCP server into the axum router at `/mcp`.
+#[must_use]
 pub fn service(state: AppState) -> StreamableHttpService<LinksServer, LocalSessionManager> {
     let handler = LinksServer::new(state);
     let session_manager = Arc::new(LocalSessionManager::default());

@@ -6,6 +6,29 @@ services:
       POSTGRES_USER: dashboard
       POSTGRES_PASSWORD: dashboard
       POSTGRES_DB: dashboard
+    # DEVELOPMENT AND TEST ONLY — never use these settings for real data.
+    #
+    # Durability is traded away for speed. Each `#[sqlx::test]` creates and
+    # migrates its own database, so the suite is dominated by fsync cost;
+    # turning it off takes a full run from minutes to seconds, which is what
+    # keeps the pre-push hook fast enough that nobody reaches for --no-verify.
+    #
+    # The risk: an unclean shutdown (host crash, OOM, hard power loss) can
+    # leave the cluster corrupt rather than merely losing recent commits.
+    # Recovery is `just db-reset`, since nothing here is a source of truth.
+    #
+    # max_connections is raised because tests run in parallel and each one
+    # holds its own database and pool; the default 100 is reachable.
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=200
     ports:
       - "5433:5432"
     # Postgres 18+ images store data in a major-version subdirectory, so the
@@ -13,11 +36,19 @@ services:
     # See https://github.com/docker-library/postgres/pull/1259
     volumes:
       - dashboard-pgdata:/var/lib/postgresql
+    # Run a real init as PID 1 so orphaned processes are reaped by it rather
+    # than by the postmaster. Without this, a `pg_isready` killed by the
+    # healthcheck timeout gets reparented to postgres, which sees an untracked
+    # child exit, treats it as a backend crash and restarts the whole cluster —
+    # observed 9 times during one test run, surfacing as PoolTimedOut and
+    # "database already exists" flakiness that looks like broken tests.
+    init: true
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U dashboard -d dashboard"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
 
 volumes:
   dashboard-pgdata:

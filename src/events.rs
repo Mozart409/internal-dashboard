@@ -20,6 +20,7 @@ pub enum LinkEvent {
 
 impl LinkEvent {
     /// SSE event name; the HTMX `sse-swap` attribute subscribes to these.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             LinkEvent::Created(_) => "created",
@@ -38,6 +39,8 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Build state with a fresh broadcast channel.
+    #[must_use]
     pub fn new(pool: sqlx::PgPool) -> Self {
         let (events, _rx) = broadcast::channel(64);
         Self { pool, events }

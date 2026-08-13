@@ -427,6 +427,9 @@ pub fn render_link_list(links: &[Link]) -> Markup {
 }
 
 /// GET / — Display the dashboard with an add-link form and SSE-connected list.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if loading the links fails.
 pub async fn index(
     State(state): State<AppState>,
     Query(params): Query<IndexParams>,
@@ -504,6 +507,10 @@ pub struct IndexParams {
 }
 
 /// GET /links/{id}/edit — Display the edit form for a link.
+///
+/// # Errors
+/// Returns [`AppError::NotFound`] if no link has that id, or
+/// [`AppError::Database`] if the lookup fails.
 pub async fn edit_page(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,

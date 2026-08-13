@@ -1,23 +1,11 @@
-mod api;
-mod db;
-mod error;
-mod events;
-mod mcp;
-mod models;
-mod sse;
-mod ui;
+//! Process entry point: configuration, pool, migrations, serve.
+//! All routing lives in [`internal_dashboard::build_router`].
 
 use std::time::Duration;
 
+use internal_dashboard::{build_router, events::AppState};
 use sqlx::postgres::PgPoolOptions;
-use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
-use utoipa::OpenApi;
-use utoipa_axum::router::OpenApiRouter;
-use utoipa_scalar::{Scalar, Servable as _};
-use utoipa_swagger_ui::SwaggerUi;
-
-use crate::events::AppState;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -43,23 +31,7 @@ async fn main() -> anyhow::Result<()> {
 
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let state = AppState::new(pool);
-
-    // Handlers register themselves into the spec, so the docs cannot drift
-    // from the routes.
-    let (api_router, openapi) = OpenApiRouter::with_openapi(api::ApiDoc::openapi())
-        .nest("/api/v1", api::router())
-        .split_for_parts();
-
-    let app = axum::Router::new()
-        .merge(ui::router())
-        .merge(sse::router())
-        .merge(api_router)
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi.clone()))
-        .merge(Scalar::with_url("/scalar", openapi))
-        .nest_service("/mcp", mcp::service(state.clone()))
-        .layer(TraceLayer::new_for_http())
-        .with_state(state);
+    let app = build_router(AppState::new(pool));
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("dashboard   http://{bind_addr}/");

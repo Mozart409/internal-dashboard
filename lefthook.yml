@@ -25,9 +25,9 @@ pre-commit:
 pre-push:
   parallel: true
   commands:
+    # `just test` depends on db-ready, which starts Postgres if it is not
+    # already up — so a stopped container never blocks a push.
     cargo-test:
-      run: cargo test --all-targets
-      env:
-        SQLX_OFFLINE: "true"
+      run: just test
     cog-check:
       run: cog check

@@ -1,0 +1,48 @@
+when:
+  - event: [push, pull_request]
+
+# `cog check` walks the whole history, so a shallow clone would fail it.
+clone:
+  - name: git
+    image: woodpeckerci/plugin-git
+    settings:
+      partial: false
+      depth: 0
+
+steps:
+  - name: checks
+    image: nixos/nix:latest
+    environment:
+      # Compile against the committed .sqlx/ cache; the tests still talk to the
+      # postgres service below at runtime.
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/dashboard
+      NIX_CONFIG: |
+        experimental-features = nix-command flakes
+        substituters = https://cache.homelab.local/homelab https://cache.nixos.org/
+        trusted-public-keys = homelab:aswnRAo2zbP13gGnUTCINX78X/lURQgPAfrgNpHpQpY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+    commands:
+      # Same command the local hooks run: fmt, clippy (pedantic denied), the
+      # full test suite, sqlx cache freshness, keep-sorted, cog.
+      - nix develop --command just ci
+
+services:
+  - name: postgres
+    image: postgres:18.4
+    environment:
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: dashboard
+      POSTGRES_DB: dashboard
+    # No volume: CI needs no persistence, which also sidesteps the PG18
+    # data-directory layout change. Same durability tuning as compose.yaml —
+    # the suite creates a database per test, so fsync dominates the runtime.
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      - -c
+      - max_connections=200

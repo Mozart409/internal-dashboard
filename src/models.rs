@@ -43,6 +43,10 @@ pub struct UpdateLink {
 
 impl NewLink {
     /// Reject empty required fields and normalise whitespace.
+    ///
+    /// # Errors
+    /// Returns [`AppError::Invalid`](crate::error::AppError::Invalid) if the
+    /// url or title is blank, or the url is not `http://` or `https://`.
     pub fn validate(&mut self) -> Result<(), crate::error::AppError> {
         self.url = self.url.trim().to_string();
         self.title = self.title.trim().to_string();
