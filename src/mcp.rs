@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::events::AppState;
-use crate::models::NewLink;
+use crate::models::{NewLink, UpdateLink};
 
 /// Parameters for searching links
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Serialize)]
@@ -42,6 +42,23 @@ pub struct AddLinkParams {
     /// Optional longer description
     pub description: Option<String>,
     /// Optional comma-separated tags or array of tags
+    #[serde(default, deserialize_with = "crate::models::de_opt_tags")]
+    pub tags: Option<Vec<String>>,
+}
+
+/// Parameters for updating an existing link. Omitted fields are left unchanged.
+#[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Serialize)]
+pub struct UpdateLinkParams {
+    /// UUID of the link to update
+    pub id: String,
+    /// New URL (must start with http:// or https://)
+    pub url: Option<String>,
+    /// New title
+    pub title: Option<String>,
+    /// New description
+    pub description: Option<String>,
+    /// Replacement tags, as an array or a comma-separated string.
+    /// This replaces the existing tags rather than appending to them.
     #[serde(default, deserialize_with = "crate::models::de_opt_tags")]
     pub tags: Option<Vec<String>>,
 }
@@ -115,6 +132,41 @@ impl LinksServer {
                 Ok(serde_json::to_string(&link).unwrap_or_default())
             }
             Err(e) => Err(format!("Failed to create link: {e}")),
+        }
+    }
+
+    /// Update an existing link. Omitted fields keep their current value.
+    /// Publishes a `LinkEvent` so open browser tabs update live.
+    #[tool(
+        description = "Update an existing link by UUID. Only the fields you supply are changed; supplying tags replaces the existing tags"
+    )]
+    async fn update_link(&self, params: Parameters<UpdateLinkParams>) -> Result<String, String> {
+        let id =
+            Uuid::parse_str(&params.0.id).map_err(|_| format!("Invalid UUID: {}", params.0.id))?;
+
+        // Reuse the same URL validation the API and UI apply, but only when a
+        // new URL is actually being set.
+        if let Some(url) = params.0.url.as_deref()
+            && !(url.starts_with("http://") || url.starts_with("https://"))
+        {
+            return Err("url must start with http:// or https://".to_string());
+        }
+
+        let update = UpdateLink {
+            url: params.0.url,
+            title: params.0.title,
+            description: params.0.description,
+            tags: params.0.tags,
+        };
+
+        match db::update_link(&self.state.pool, id, &update).await {
+            Ok(Some(link)) => {
+                self.state
+                    .publish(crate::events::LinkEvent::Updated(link.clone()));
+                Ok(serde_json::to_string(&link).unwrap_or_default())
+            }
+            Ok(None) => Err(format!("Link not found: {id}")),
+            Err(e) => Err(format!("Failed to update link: {e}")),
         }
     }
 
