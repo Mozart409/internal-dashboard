@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: docker.io/library/postgres:18.4
+    container_name: internal-dashboard-db
+    environment:
+      POSTGRES_USER: dashboard
+      POSTGRES_PASSWORD: dashboard
+      POSTGRES_DB: dashboard
+    ports:
+      - "5433:5432"
+    # Postgres 18+ images store data in a major-version subdirectory, so the
+    # mount goes at /var/lib/postgresql, not /var/lib/postgresql/data.
+    # See https://github.com/docker-library/postgres/pull/1259
+    volumes:
+      - dashboard-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dashboard -d dashboard"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dashboard-pgdata:

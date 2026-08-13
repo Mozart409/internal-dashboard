@@ -14,3 +14,8 @@
 # keep-sorted start
 lefthook-local.yml
 # keep-sorted end
+
+# Local secrets/config — copy .env.example to .env
+# keep-sorted start
+.env
+# keep-sorted end

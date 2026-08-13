@@ -34,10 +34,14 @@
 
               # Project tooling
               # keep-sorted start
+              cargo-watch
               cocogitto
               just
               keep-sorted
               lefthook
+              podman-compose
+              postgresql_18
+              sqlx-cli
               # keep-sorted end
             ];
 
