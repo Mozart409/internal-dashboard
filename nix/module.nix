@@ -37,6 +37,17 @@ let
     else
       socketUrl "/run/postgresql" 5432;
 
+  # `ensureDatabases` and `ensureUsers` run from postgresql-setup.service, not
+  # from postgresql.service, so ordering after the latter alone would start the
+  # dashboard against a database and role that do not exist yet. The setup unit
+  # is a oneshot, so `After=` on it waits for it to finish. It is looked up
+  # rather than named outright, because older nixpkgs did this work in
+  # postgresql.service's postStart and has no such unit to depend on.
+  postgresqlUnits = [
+    "postgresql.service"
+  ]
+  ++ lib.optional (config.systemd.services ? postgresql-setup) "postgresql-setup.service";
+
   # Peer authentication on the socket: pgbouncer is told to trust the OS user
   # behind the connection, which is the dashboard and nothing else, so no
   # password or auth file has to exist anywhere.
@@ -500,8 +511,8 @@ in
     # creating an untrusted one needs the superuser the dashboard is not.
     systemd.services.internal-dashboard-db-setup = mkIf (db.createLocally && db.extensions != [ ]) {
       description = "Create PostgreSQL extensions for the internal dashboard";
-      after = [ "postgresql.service" ];
-      requires = [ "postgresql.service" ];
+      after = postgresqlUnits;
+      requires = postgresqlUnits;
       before = [ "internal-dashboard.service" ];
       wantedBy = [ "internal-dashboard.service" ];
 
@@ -525,10 +536,10 @@ in
       after = [
         "network-online.target"
       ]
-      ++ optionals db.createLocally [ "postgresql.service" ]
+      ++ optionals db.createLocally postgresqlUnits
       ++ optionals (db.createLocally && bouncer.enable) [ "pgbouncer.service" ];
       requires =
-        optionals db.createLocally [ "postgresql.service" ]
+        optionals db.createLocally postgresqlUnits
         ++ optionals (db.createLocally && bouncer.enable) [ "pgbouncer.service" ];
 
       environment = {
@@ -557,7 +568,9 @@ in
         # without it keep-sorted --mode fix drops their closing brackets.
         # keep-sorted start block=yes
         AmbientCapabilities = optionals (cfg.port < 1024) [ "CAP_NET_BIND_SERVICE" ];
-        CapabilityBoundingSet = optionals (cfg.port < 1024) [ "CAP_NET_BIND_SERVICE" ];
+        # [ "" ] is the drop-everything form: an empty list renders as no
+        # directive at all, which would leave the bounding set untouched.
+        CapabilityBoundingSet = if cfg.port < 1024 then [ "CAP_NET_BIND_SERVICE" ] else [ "" ];
         LockPersonality = true;
         MemoryDenyWriteExecute = true;
         NoNewPrivileges = true;
@@ -577,6 +590,10 @@ in
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
+          # glibc opens a netlink socket to enumerate interfaces while
+          # resolving a name, so dropping this breaks any database.url that
+          # points at a hostname rather than a socket.
+          "AF_NETLINK"
           "AF_UNIX"
         ];
         RestrictNamespaces = true;

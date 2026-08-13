@@ -158,6 +158,15 @@ let
         && lib.elem "postgresql.service" defaultUnit.requires;
     }
     {
+      # ensureDatabases and ensureUsers run from postgresql-setup.service, so
+      # waiting only on postgresql.service races the database into existence.
+      name = "the unit waits for the database and role to be created";
+      ok =
+        lib.elem "postgresql-setup.service" defaultUnit.after
+        && lib.elem "postgresql-setup.service" defaultUnit.requires
+        && lib.elem "postgresql-setup.service" default.systemd.services.internal-dashboard-db-setup.after;
+    }
+    {
       name = "createLocally provisions the database and its owner";
       ok =
         default.services.postgresql.enable
@@ -177,12 +186,23 @@ let
           defaultUnit.serviceConfig.RestrictAddressFamilies == [
             "AF_INET"
             "AF_INET6"
+            "AF_NETLINK"
             "AF_UNIX"
           ];
     }
     {
-      name = "no capabilities are kept for an unprivileged port";
-      ok = defaultUnit.serviceConfig.AmbientCapabilities == [ ];
+      # Without netlink, glibc cannot resolve a hostname, so an external
+      # database.url pointing at one would never connect.
+      name = "name resolution is possible for an external database";
+      ok = lib.elem "AF_NETLINK" (
+        external.systemd.services.internal-dashboard.serviceConfig.RestrictAddressFamilies
+      );
+    }
+    {
+      name = "all capabilities are dropped for an unprivileged port";
+      ok =
+        defaultUnit.serviceConfig.AmbientCapabilities == [ ]
+        && defaultUnit.serviceConfig.CapabilityBoundingSet == [ "" ];
     }
     {
       name = "a privileged port keeps exactly CAP_NET_BIND_SERVICE";
