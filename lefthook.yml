@@ -1,0 +1,34 @@
+# Git hooks managed by lefthook — https://lefthook.dev
+# Installed automatically on `nix develop` via the shellHook.
+
+commit-msg:
+  commands:
+    cog-verify:
+      run: cog verify --file {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    cargo-fmt:
+      glob: "*.rs"
+      run: cargo fmt --all
+      stage_fixed: true
+    cargo-clippy:
+      glob: "*.rs"
+      run: cargo clippy --all-targets -- -D warnings
+    keep-sorted:
+      run: keep-sorted --mode fix {staged_files}
+      stage_fixed: true
+
+pre-push:
+  parallel: true
+  commands:
+    cargo-test:
+      # No-op until the scaffold has a real Cargo.toml, so a fresh copy of
+      # this template doesn't fail pre-push before any code is written.
+      run: |
+        if [ -f Cargo.toml ]; then
+          cargo test --all-targets
+        fi
+    cog-check:
+      run: cog check

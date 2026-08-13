@@ -1,0 +1,16 @@
+# Nix
+# keep-sorted start
+.direnv/
+/result
+/result-*
+# keep-sorted end
+
+# Rust
+# keep-sorted start
+/target/
+# keep-sorted end
+
+# Tooling
+# keep-sorted start
+lefthook-local.yml
+# keep-sorted end

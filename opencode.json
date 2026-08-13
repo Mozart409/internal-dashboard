@@ -1,0 +1,15 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "git commit --no-verify*": "deny",
+      "git commit -n*": "deny",
+      "git push --no-verify*": "deny",
+      "git push -n*": "deny",
+      "git -c core.hooksPath*": "deny",
+      "git config*hooksPath*": "deny",
+      "LEFTHOOK=0*": "deny"
+    }
+  }
+}

@@ -1,0 +1,8 @@
+# Cocogitto configuration — https://docs.cocogitto.io
+# Conventional commits are enforced by the commit-msg hook (lefthook).
+
+from_latest_tag = false
+ignore_merge_commits = false
+
+[changelog]
+path = "CHANGELOG.md"
