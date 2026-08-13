@@ -309,6 +309,16 @@ let
         && bouncing.services.pgbouncer.settings.pgbouncer.auth_type == "hba";
     }
     {
+      # pgbouncer resolves the login name before applying the HBA method, and
+      # rejects a name it cannot resolve — so peer auth needs both files, not
+      # just the HBA one.
+      name = "pgbouncer is given a user list as well as an hba file";
+      ok =
+        bouncing.services.pgbouncer.settings.pgbouncer ? auth_file
+        && bouncing.services.pgbouncer.settings.pgbouncer.auth_file != null
+        && bouncing.services.pgbouncer.settings.pgbouncer ? auth_hba_file;
+    }
+    {
       name = "pgbouncer listens on a socket only, never on TCP";
       ok =
         bouncing.services.pgbouncer.settings.pgbouncer.listen_addr == null
