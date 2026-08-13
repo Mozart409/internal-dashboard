@@ -1,5 +1,6 @@
 # Load .env if present, so DATABASE_URL is available to sqlx and the app.
 set dotenv-load := true
+set unstable := true
 
 # Fallback matches compose.yaml, so the recipes work before .env is created.
 export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgres://dashboard:dashboard@localhost:5433/dashboard")
@@ -58,6 +59,18 @@ dev:
 changelog:
     cog changelog
 
+# Push the current branch and its tags to forgejo, then to the github mirror
+sync-remotes:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+    # origin is forgejo and is the primary: if it rejects the push, stop here
+    # rather than leaving the mirror ahead of the source of truth.
+    echo "==> origin (forgejo, primary)"
+    git push --follow-tags origin "$branch"
+    echo "==> github (mirror)"
+    git push --follow-tags github "$branch"
+
 # Check formatting without changing files
 fmt-check:
     cargo fmt --all -- --check
@@ -102,6 +115,16 @@ vendor-assets:
         fi
     done
     echo "vendored htmx {{ htmx_version }} and htmx-ext-sse {{ htmx_sse_version }}"
+
+# --- nix --------------------------------------------------------------------
+
+# Build the dashboard package for this system
+nix-build:
+    nix build .#default
+
+# Run the flake checks: the package, the module eval checks, and on Linux the VM test
+nix-check:
+    nix flake check
 
 # --- database ---------------------------------------------------------------
 
