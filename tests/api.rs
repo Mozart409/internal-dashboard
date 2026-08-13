@@ -638,26 +638,48 @@ async fn the_documented_paths_are_the_paths_that_actually_serve(pool: PgPool) {
 }
 
 // ---------------------------------------------------------------------------
-// docs UIs
+// docs UI
 // ---------------------------------------------------------------------------
 
 #[sqlx::test]
-async fn the_api_docs_uis_are_served(pool: PgPool) {
+async fn the_api_docs_ui_is_served(pool: PgPool) {
     let app = common::spawn(pool).await;
 
-    // Scalar renders at the exact path; swagger-ui answers the bare path with a
-    // redirect to its trailing-slash index, so a 3xx is a pass there too.
-    for path in ["/scalar", "/swagger-ui"] {
-        let res = app
-            .client
-            .get(app.url(path))
-            .send()
-            .await
-            .expect("docs UI request");
-        let status = res.status();
-        assert!(
-            status.is_success() || status.is_redirection(),
-            "{path} must serve the API docs, got {status}"
-        );
-    }
+    let res = app
+        .client
+        .get(app.url("/scalar"))
+        .send()
+        .await
+        .expect("docs UI request");
+    let status = res.status();
+    assert!(
+        status.is_success(),
+        "/scalar must serve the API docs, got {status}"
+    );
+}
+
+#[sqlx::test]
+async fn the_openapi_document_is_served_as_json(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    let res = app
+        .client
+        .get(app.url("/api-docs/openapi.json"))
+        .send()
+        .await
+        .expect("openapi request");
+
+    assert_eq!(res.status(), StatusCode::OK);
+    // Regression cover for dropping swagger-ui, which used to register this
+    // route: the spec must still be served, and served as JSON.
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
+    assert!(
+        content_type.starts_with("application/json"),
+        "the spec must be served as JSON, got {content_type:?}"
+    );
 }
