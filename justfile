@@ -1,3 +1,11 @@
+# Load .env if present, so DATABASE_URL is available to sqlx and the app.
+set dotenv-load := true
+
+# Fallback matches compose.yaml, so the recipes work before .env is created.
+export DATABASE_URL := env_var_or_default("DATABASE_URL", "postgres://dashboard:dashboard@localhost:5433/dashboard")
+
+container := "internal-dashboard-db"
+
 # Show this list of recipes
 default:
     @just --list
@@ -10,14 +18,13 @@ build:
 check:
     cargo check --all-targets
 
-# Lint with clippy, warnings denied
+# Lint with clippy, warnings denied (pedantic is denied via Cargo.toml [lints])
 clippy:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # No-op until the scaffold has a real Cargo.toml.
-    if [ -f Cargo.toml ]; then
-        cargo clippy --all-targets -- -D warnings
-    fi
+    cargo clippy --all-targets -- -D warnings
+
+# Re-run clippy on every file change
+clippy-watch:
+    cargo watch -c -x 'clippy --all-targets -- -D warnings'
 
 # Format the code
 fmt:
@@ -25,12 +32,15 @@ fmt:
 
 # Run the full test suite
 test:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # No-op until the scaffold has a real Cargo.toml.
-    if [ -f Cargo.toml ]; then
-        cargo test --all-targets
-    fi
+    cargo test --all-targets
+
+# Run the server once
+run:
+    cargo run
+
+# Run the server, restarting on every file change
+dev:
+    cargo watch -c -x run
 
 # Generate CHANGELOG.md from conventional commits
 changelog:
@@ -38,12 +48,7 @@ changelog:
 
 # Check formatting without changing files
 fmt-check:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    # No-op until the scaffold has a real Cargo.toml.
-    if [ -f Cargo.toml ]; then
-        cargo fmt --all -- --check
-    fi
+    cargo fmt --all -- --check
 
 # Verify keep-sorted blocks are sorted
 sorted-check:
@@ -58,5 +63,84 @@ sorted-check:
     keep-sorted --mode lint "${files[@]}"
 
 # Run every check that CI runs (check mode, nothing mutates)
-ci: fmt-check clippy test sorted-check
+ci: fmt-check clippy test sorted-check prepare-check
     cog check
+
+# --- database ---------------------------------------------------------------
+
+# Start Postgres and wait until it accepts connections
+db-up:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    podman compose up -d
+    echo "waiting for {{ container }} to become healthy..."
+    for _ in $(seq 1 60); do
+        if [ "$(podman inspect --format '{{{{.State.Health.Status}}}}' {{ container }} 2>/dev/null)" = "healthy" ]; then
+            echo "ready on $DATABASE_URL"
+            exit 0
+        fi
+        sleep 1
+    done
+    echo "timed out waiting for postgres" >&2
+    podman logs --tail 30 {{ container }} >&2
+    exit 1
+
+# Stop Postgres, keeping the data volume
+db-down:
+    podman compose down
+
+# Destroy the container AND its data, then rebuild from migrations
+db-reset:
+    podman compose down -v
+    @just db-up
+    @just mig-run
+
+# Tail the Postgres logs
+db-logs:
+    podman logs -f {{ container }}
+
+# Open a psql shell against the dev database
+db-shell:
+    podman exec -it {{ container }} psql -U dashboard -d dashboard
+
+# Server version, database size, and the links table definition
+db-info:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    podman exec {{ container }} psql -U dashboard -d dashboard -c 'select version();'
+    podman exec {{ container }} psql -U dashboard -d dashboard -c \
+        "select pg_size_pretty(pg_database_size('dashboard')) as size;"
+    podman exec {{ container }} psql -U dashboard -d dashboard -c '\dt'
+    podman exec {{ container }} psql -U dashboard -d dashboard -c '\d links'
+
+# --- migrations -------------------------------------------------------------
+
+# Apply all pending migrations
+mig-run:
+    sqlx migrate run
+
+# Show which migrations are applied and which are pending
+mig-info:
+    sqlx migrate info
+
+# Revert the most recent migration (needs a matching .down.sql)
+mig-revert:
+    sqlx migrate revert
+
+# Scaffold a new migration: just mig-add add_favicon_column
+mig-add name:
+    sqlx migrate add {{ name }}
+
+# --- sqlx offline cache -----------------------------------------------------
+
+# Regenerate .sqlx/ from a live database — run after changing any query!
+prepare:
+    cargo sqlx prepare
+
+# Fail if .sqlx/ is stale (this is what CI enforces)
+prepare-check:
+    cargo sqlx prepare --check
+
+# Compile the way CI does: no database, cache only
+check-offline:
+    SQLX_OFFLINE=true cargo check --all-targets

@@ -30,10 +30,17 @@ impl IntoResponse for AppError {
         // Database internals are logged, never shown to the caller.
         if status == StatusCode::INTERNAL_SERVER_ERROR {
             tracing::error!(error = %self, "request failed");
-            return (status, axum::Json(serde_json::json!({ "error": "internal server error" })))
+            return (
+                status,
+                axum::Json(serde_json::json!({ "error": "internal server error" })),
+            )
                 .into_response();
         }
 
-        (status, axum::Json(serde_json::json!({ "error": self.to_string() }))).into_response()
+        (
+            status,
+            axum::Json(serde_json::json!({ "error": self.to_string() })),
+        )
+            .into_response()
     }
 }

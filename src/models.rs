@@ -71,7 +71,7 @@ where
     Ok(de_opt_tags(d)?.unwrap_or_default())
 }
 
-fn de_opt_tags<'de, D>(d: D) -> Result<Option<Vec<String>>, D::Error>
+pub(crate) fn de_opt_tags<'de, D>(d: D) -> Result<Option<Vec<String>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -98,4 +98,69 @@ fn clean(tags: Vec<String>) -> Vec<String> {
     out.sort();
     out.dedup();
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_link(json: &str) -> NewLink {
+        serde_json::from_str(json).expect("valid NewLink")
+    }
+
+    #[test]
+    fn tags_accept_a_json_array() {
+        let link = new_link(r#"{"url":"https://a.dev","title":"a","tags":["Rust","docs"]}"#);
+        assert_eq!(link.tags, vec!["docs", "rust"]);
+    }
+
+    #[test]
+    fn tags_accept_a_comma_separated_form_field() {
+        // This is the shape an HTML form submits.
+        let link = new_link(r#"{"url":"https://a.dev","title":"a","tags":" Rust , docs "}"#);
+        assert_eq!(link.tags, vec!["docs", "rust"]);
+    }
+
+    #[test]
+    fn tags_are_lowercased_sorted_deduped_and_blanks_dropped() {
+        let link = new_link(r#"{"url":"https://a.dev","title":"a","tags":"b,,A, a ,B"}"#);
+        assert_eq!(link.tags, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn tags_default_to_empty_when_omitted() {
+        let link = new_link(r#"{"url":"https://a.dev","title":"a"}"#);
+        assert!(link.tags.is_empty());
+    }
+
+    #[test]
+    fn validate_trims_and_accepts_http_urls() {
+        let mut link = new_link(r#"{"url":"  https://a.dev  ","title":"  a  "}"#);
+        link.validate().expect("should be valid");
+        assert_eq!(link.url, "https://a.dev");
+        assert_eq!(link.title, "a");
+    }
+
+    #[test]
+    fn validate_rejects_non_http_schemes() {
+        let mut link = new_link(r#"{"url":"ftp://a.dev","title":"a"}"#);
+        assert!(link.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_blank_url_and_title() {
+        let mut blank_url = new_link(r#"{"url":"   ","title":"a"}"#);
+        assert!(blank_url.validate().is_err());
+
+        let mut blank_title = new_link(r#"{"url":"https://a.dev","title":"   "}"#);
+        assert!(blank_title.validate().is_err());
+    }
+
+    #[test]
+    fn update_omitting_tags_leaves_them_unchanged() {
+        // `None` means "leave alone" — it must not be confused with "clear".
+        let update: UpdateLink = serde_json::from_str(r#"{"title":"new"}"#).expect("valid");
+        assert!(update.tags.is_none());
+        assert_eq!(update.title.as_deref(), Some("new"));
+    }
 }

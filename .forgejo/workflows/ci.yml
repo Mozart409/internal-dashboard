@@ -9,6 +9,9 @@ on:
 jobs:
   checks:
     runs-on: ubuntu-latest
+    env:
+      # Compile against the checked-in .sqlx/ cache so CI needs no database.
+      SQLX_OFFLINE: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

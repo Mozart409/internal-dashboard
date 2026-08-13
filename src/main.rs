@@ -1,12 +1,21 @@
+mod api;
 mod db;
 mod error;
 mod events;
+mod mcp;
 mod models;
+mod sse;
+mod ui;
 
 use std::time::Duration;
 
 use sqlx::postgres::PgPoolOptions;
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
+use utoipa::OpenApi;
+use utoipa_axum::router::OpenApiRouter;
+use utoipa_scalar::{Scalar, Servable as _};
+use utoipa_swagger_ui::SwaggerUi;
 
 use crate::events::AppState;
 
@@ -15,9 +24,11 @@ async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
 
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-            EnvFilter::new("internal_dashboard=debug,tower_http=debug,info")
-        }))
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new("internal_dashboard=debug,tower_http=debug,info")
+            }),
+        )
         .init();
 
     let database_url = std::env::var("DATABASE_URL")
@@ -34,12 +45,27 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState::new(pool);
 
+    // Handlers register themselves into the spec, so the docs cannot drift
+    // from the routes.
+    let (api_router, openapi) = OpenApiRouter::with_openapi(api::ApiDoc::openapi())
+        .nest("/api/v1", api::router())
+        .split_for_parts();
+
     let app = axum::Router::new()
-        .route("/health", axum::routing::get(|| async { "ok" }))
+        .merge(ui::router())
+        .merge(sse::router())
+        .merge(api_router)
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi.clone()))
+        .merge(Scalar::with_url("/scalar", openapi))
+        .nest_service("/mcp", mcp::service(state.clone()))
+        .layer(TraceLayer::new_for_http())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
-    tracing::info!("listening on http://{bind_addr}");
+    tracing::info!("dashboard   http://{bind_addr}/");
+    tracing::info!("scalar      http://{bind_addr}/scalar");
+    tracing::info!("swagger-ui  http://{bind_addr}/swagger-ui");
+    tracing::info!("mcp         http://{bind_addr}/mcp");
     axum::serve(listener, app).await?;
 
     Ok(())

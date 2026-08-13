@@ -16,6 +16,8 @@ pre-commit:
     cargo-clippy:
       glob: "*.rs"
       run: cargo clippy --all-targets -- -D warnings
+      env:
+        SQLX_OFFLINE: "true"
     keep-sorted:
       run: keep-sorted --mode fix {staged_files}
       stage_fixed: true
@@ -24,11 +26,8 @@ pre-push:
   parallel: true
   commands:
     cargo-test:
-      # No-op until the scaffold has a real Cargo.toml, so a fresh copy of
-      # this template doesn't fail pre-push before any code is written.
-      run: |
-        if [ -f Cargo.toml ]; then
-          cargo test --all-targets
-        fi
+      run: cargo test --all-targets
+      env:
+        SQLX_OFFLINE: "true"
     cog-check:
       run: cog check

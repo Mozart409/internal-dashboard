@@ -5,6 +5,12 @@ use crate::models::Link;
 
 /// Broadcast to every connected SSE client whenever a link changes, no matter
 /// which surface (UI, REST API or MCP) made the change.
+///
+/// The payloads are carried but not currently read: the SSE handler re-renders
+/// the whole list from the database on any event, which keeps every client
+/// consistent regardless of how many events it missed. They are kept so a
+/// consumer can move to granular per-row updates without changing publishers.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum LinkEvent {
     Created(Link),
