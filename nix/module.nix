@@ -48,13 +48,27 @@ let
   ]
   ++ lib.optional (config.systemd.services ? postgresql-setup) "postgresql-setup.service";
 
-  # Peer authentication on the socket: pgbouncer is told to trust the OS user
-  # behind the connection, which is the dashboard and nothing else, so no
-  # password or auth file has to exist anywhere.
+  # Peer authentication on the socket: pgbouncer checks the OS user behind the
+  # connection, which is the dashboard and nothing else, so no password is
+  # involved.
   pgbouncerHba = pkgs.writeText "internal-dashboard-pgbouncer-hba" ''
     # A local line carries no address column.
     # type   database  user  method
     local    all       all   peer
+  '';
+
+  # pgbouncer resolves the login name before it ever applies the HBA method, and
+  # a name it cannot resolve is marked mock_auth, which peer authentication
+  # refuses outright. So the user has to be listed here even though peer auth
+  # never looks at a password.
+  #
+  # The empty password is not a weak credential, it is the absence of one: an
+  # entry loaded from auth_file has dynamic_passwd forced off, which is exactly
+  # what stops pgbouncer treating the account as one to resolve via auth_query.
+  # No password method is reachable anyway — the HBA file offers only peer, and
+  # pgbouncer listens on no TCP port.
+  pgbouncerUsers = pkgs.writeText "internal-dashboard-pgbouncer-users" ''
+    "${cfg.user}" ""
   '';
 
   # A deliberately small derivation of Postgres settings from one declared
@@ -487,6 +501,7 @@ in
           max_prepared_statements = bouncer.maxPreparedStatements;
           auth_type = "hba";
           auth_hba_file = toString pgbouncerHba;
+          auth_file = toString pgbouncerUsers;
           # Parameters pgbouncer cannot track across a pooled connection, and
           # which the client is allowed to set anyway.
           ignore_startup_parameters = "extra_float_digits,options";
