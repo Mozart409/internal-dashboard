@@ -59,6 +59,32 @@ dev:
 changelog:
     cog changelog
 
+# Always goes through --annotated, because cog creates a lightweight tag
+# otherwise and `git push --follow-tags` ignores those — cog.toml has no key to
+# make that the default, so this recipe is the only place it can live.
+# The blank line below matters: just would otherwise take this whole block as
+# the recipe's `just --list` description.
+
+# Cut a release and push it. Version is derived unless given: `just release 1.0.0`
+release version="":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    target="{{ version }}"
+    if [ -z "$target" ]; then
+        # Prints the tag it would create, e.g. "v0.3.0"; last line only, so a
+        # warning ahead of it cannot end up in the version string.
+        target="$(cog bump --auto --dry-run | tail -n1)"
+    fi
+    target="${target#v}"
+    # cog aborts on a dirty tree or with nothing to release, and pipefail turns
+    # that into an exit here — but an empty target would otherwise reach cog as
+    # `--version ""`, so say what actually went wrong.
+    if [ -z "$target" ]; then
+        echo "no target version: commit your changes, or pass one explicitly" >&2
+        exit 1
+    fi
+    cog bump --version "$target" --annotated "release v$target"
+
 # Push the current branch and its tags to forgejo, then to the github mirror
 sync-remotes:
     #!/usr/bin/env bash
