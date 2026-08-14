@@ -17,11 +17,26 @@ steps:
       # postgres service below at runtime.
       SQLX_OFFLINE: "true"
       DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/dashboard
+      # Points at the bundle the first command below assembles, rather than the
+      # image default under the read-only nix store. Set here so it applies to
+      # `nix develop` without depending on an `export` carrying between commands.
+      NIX_SSL_CERT_FILE: /tmp/ca-bundle.crt
+      SSL_CERT_FILE: /tmp/ca-bundle.crt
       NIX_CONFIG: |
         experimental-features = nix-command flakes
-        substituters = https://cache.homelab.local/homelab https://cache.nixos.org/
+        # `.internal`, not `.local`: getaddrinfo routes `.local` to mDNS, and the
+        # nixos/nix image carries no avahi/nss-mdns, so the name never resolved and
+        # nix silently fell back to cache.nixos.org for the whole toolchain.
+        substituters = https://cache.homelab.internal/homelab https://cache.nixos.org/
         trusted-public-keys = homelab:aswnRAo2zbP13gGnUTCINX78X/lURQgPAfrgNpHpQpY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
     commands:
+      # The image ships its own CA bundle inside the read-only nix store and
+      # points NIX_SSL_CERT_FILE at it, so the agent host trusting the Homelab
+      # step-ca root does not carry into this container. Without the root the
+      # cache above fails TLS and nix quietly drops it — the substituter is
+      # disabled with a warning and the whole toolchain comes from
+      # cache.nixos.org, which is what every run has been doing so far.
+      - cat /etc/ssl/certs/ca-bundle.crt nix/homelab-root-ca.pem > /tmp/ca-bundle.crt
       # Same command the local hooks run: fmt, clippy (pedantic denied), the
       # full test suite, sqlx cache freshness, keep-sorted, cog.
       - nix develop --command just ci
@@ -36,7 +51,13 @@ services:
     # No volume: CI needs no persistence, which also sidesteps the PG18
     # data-directory layout change. Same durability tuning as compose.yaml —
     # the suite creates a database per test, so fsync dominates the runtime.
-    command:
+    # `entrypoint`, not `command`: a service has no `command` key, so the whole
+    # list was dropped by the schema and postgres ran with stock settings —
+    # fsync on and max_connections=100 against a database-per-test suite.
+    # docker-entrypoint.sh has to stay in front: it is what runs initdb and drops
+    # privileges, and postgres refuses to start as root without it.
+    entrypoint:
+      - docker-entrypoint.sh
       - postgres
       - -c
       - fsync=off
