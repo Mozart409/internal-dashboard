@@ -5,7 +5,9 @@
 
 rustPlatform.buildRustPackage {
   pname = "internal-dashboard";
-  version = "0.1.0";
+  # Read out of Cargo.toml rather than duplicated here, so `cog bump` moving the
+  # one version string is enough and there is no second copy to drift.
+  version = (lib.importTOML ../Cargo.toml).package.version;
 
   # Only the inputs the compiler actually reads, so editing the README or the
   # compose file does not invalidate the build.

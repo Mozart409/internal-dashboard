@@ -89,6 +89,9 @@
           packages = with pkgs; [
             # keep-sorted start
             cargo
+            # cargo set-version, which cog's pre_bump_hooks call to move the
+            # version in Cargo.toml.
+            cargo-edit
             cargo-watch
             clippy
             cocogitto

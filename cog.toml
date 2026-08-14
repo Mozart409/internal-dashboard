@@ -1,8 +1,41 @@
 # Cocogitto configuration — https://docs.cocogitto.io
 # Conventional commits are enforced by the commit-msg hook (lefthook).
 
-from_latest_tag = false
+# Only verify commits made since the latest tag. `cog check` runs on every push
+# via lefthook, and re-validating the whole history there is both slow and
+# pointless: anything below the last tag has already shipped and cannot be
+# reworded now.
+from_latest_tag = true
 ignore_merge_commits = false
 
+tag_prefix = "v"
+
+# `cog bump` owns the release. Cargo.toml is the single source of truth for the
+# version: nix/package.nix reads it with lib.importTOML, so these hooks only
+# have to move it in one place and then refresh what is derived from it.
+pre_bump_hooks = [
+  # cargo-edit, from the devShell in flake.nix.
+  "cargo set-version {{version}}",
+  # Rewrites this crate's own version in Cargo.lock. Routed through just so
+  # DATABASE_URL is set for the query! macros — cog's hooks do not inherit it.
+  "just check",
+  # Refreshes .sqlx/, which is what the Nix build compiles against, since it
+  # has no database to check the queries live.
+  "just prepare",
+]
+
+# The tag cog creates is lightweight, and `git push --follow-tags` pushes only
+# annotated tags — hence pushing it by name rather than reusing
+# `just sync-remotes`. origin (forgejo) is the primary and goes first, so a
+# rejection there stops the run before the github mirror gets ahead of it.
+# Branch and tag go in one invocation per remote: lefthook's pre-push runs the
+# whole integration suite, and a push per ref would run it once per ref.
+post_bump_hooks = [
+  "git push origin main v{{version}}",
+  "git push github main v{{version}}",
+]
+
+# Keep this last: every key above is top-level, and a table header would
+# otherwise capture them.
 [changelog]
 path = "CHANGELOG.md"
