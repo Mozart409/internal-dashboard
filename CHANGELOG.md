@@ -2,6 +2,13 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.2.1 - 2026-08-14
+#### Miscellaneous Chores
+- (**ignore**) update ignore - (53161ed) - macbook-pro
+- (**release**) add just release, which tags annotated - (ad2bbf5) - macbook-pro
+
+- - -
+
 ## v0.2.0 - 2026-08-14
 #### Features
 - (**mcp**) add update_link tool - (e2a6e4e) - developmentbot
