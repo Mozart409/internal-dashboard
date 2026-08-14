@@ -12,6 +12,9 @@
 
 # Tooling
 # keep-sorted start
+# Claude Code's scratch worktrees. Left untracked they abort `cog bump`, which
+# refuses to run with anything uncommitted.
+.claude/
 lefthook-local.yml
 # keep-sorted end
 
@@ -19,3 +22,4 @@ lefthook-local.yml
 # keep-sorted start
 .env
 # keep-sorted end
+
