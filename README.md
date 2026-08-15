@@ -1,5 +1,7 @@
 # internal-dashboard
 
+[![CI status](https://ci.homelab.internal/api/badges/2/status.svg)](https://ci.homelab.internal/repos/2)
+
 A small internal dashboard for manually curating links. Three surfaces sit on
 one shared data-access layer (`src/db.rs`):
 
