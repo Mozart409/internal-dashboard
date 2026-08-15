@@ -106,6 +106,7 @@
             rustc
             rustfmt
             sqlx-cli
+            tailwindcss_4
             # keep-sorted end
           ];
 

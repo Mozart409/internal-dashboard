@@ -119,6 +119,12 @@ ci: fmt-check clippy test sorted-check prepare-check
 
 # --- vendored frontend assets -----------------------------------------------
 
+css-watch:
+    tailwindcss --input src/input.css --output static/tailwind.css --watch --minify
+
+css-build:
+    tailwindcss --input src/input.css --output static/tailwind.css --minify
+
 htmx_version := "2.0.4"
 htmx_sse_version := "2.2.2"
 

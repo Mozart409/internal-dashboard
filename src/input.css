@@ -1,0 +1,4 @@
+@import "tailwindcss";
+
+/* Keep Tailwind's source scan inside src/, never Rust's target/ directory. */
+@source "./";

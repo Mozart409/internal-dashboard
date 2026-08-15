@@ -20,6 +20,7 @@ use crate::models::{Link, NewLink, UpdateLink};
 /// Refresh them with `just vendor-assets`.
 const HTMX_JS: &str = include_str!("../static/htmx.min.js");
 const HTMX_SSE_JS: &str = include_str!("../static/sse.js");
+const TAILWIND_CSS: &str = include_str!("../static/tailwind.css");
 
 /// Serve an embedded script. Immutable caching is safe because the contents
 /// only change when the binary is rebuilt.
@@ -45,6 +46,14 @@ async fn htmx_js() -> impl IntoResponse {
 #[allow(clippy::unused_async)]
 async fn htmx_sse_js() -> impl IntoResponse {
     javascript(HTMX_SSE_JS)
+}
+
+#[allow(clippy::unused_async)]
+async fn tailwind_css() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+        TAILWIND_CSS,
+    )
 }
 
 /// Stylesheet for the whole dashboard, inlined into every page.
@@ -351,6 +360,7 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 title { (title) }
                 script src="/static/htmx.min.js" {}
                 script src="/static/sse.js" {}
+                link rel="stylesheet" href="/static/tailwind.css";
                 style { (maud::PreEscaped(STYLES)) }
             }
             body {
@@ -620,6 +630,7 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/static/htmx.min.js", axum::routing::get(htmx_js))
         .route("/static/sse.js", axum::routing::get(htmx_sse_js))
+        .route("/static/tailwind.css", axum::routing::get(tailwind_css))
         .route("/", axum::routing::get(index))
         .route("/links/{id}/edit", axum::routing::get(edit_page))
         .route("/links", axum::routing::post(create_link))

@@ -9,6 +9,9 @@ commit-msg:
 pre-commit:
   parallel: true
   commands:
+    css-build:
+      run: just css-build
+      stage_fixed: true
     cargo-fmt:
       glob: "*.rs"
       run: cargo fmt --all
