@@ -39,7 +39,9 @@ steps:
       - cat /etc/ssl/certs/ca-bundle.crt nix/homelab-root-ca.pem > /tmp/ca-bundle.crt
       # Same command the local hooks run: fmt, clippy (pedantic denied), the
       # full test suite, sqlx cache freshness, keep-sorted, cog.
-      - nix develop --command just ci
+      # nix develop does not preserve SQLX_OFFLINE from the outer container
+      # environment, so set it inside the dev shell where Cargo runs.
+      - nix develop --command env SQLX_OFFLINE=true just ci
 
 services:
   - name: postgres
