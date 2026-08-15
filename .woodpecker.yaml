@@ -40,8 +40,10 @@ steps:
       # Same command the local hooks run: fmt, clippy (pedantic denied), the
       # full test suite, sqlx cache freshness, keep-sorted, cog.
       # nix develop does not preserve SQLX_OFFLINE from the outer container
-      # environment, so set it inside the dev shell where Cargo runs.
-      - nix develop --command env SQLX_OFFLINE=true just ci
+      # environment, so set it inside the dev shell where Cargo runs. The
+      # prepare-check recipe also needs the live service schema, unlike the
+      # compile and test steps, so apply migrations before running the suite.
+      - nix develop --command sh -c 'export DATABASE_URL=postgres://dashboard:dashboard@postgres:5432/dashboard SQLX_OFFLINE=true; sqlx migrate run; just ci'
 
 services:
   - name: postgres
