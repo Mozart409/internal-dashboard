@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-@source "./";
+@source "./**/*.rs";
 
 /* Link Atlas: a quiet paper surface with ink, copper, and a little signal orange. */
 :root,
