@@ -8,6 +8,7 @@ clone:
     settings:
       partial: false
       depth: 0
+      tags: true
 
 steps:
   - name: checks
