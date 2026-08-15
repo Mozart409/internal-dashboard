@@ -56,299 +56,10 @@ async fn tailwind_css() -> impl IntoResponse {
     )
 }
 
-/// Stylesheet for the whole dashboard, inlined into every page.
-const STYLES: &str = r#"
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --text-primary: #1a1a1a;
-  --text-secondary: #555555;
-  --border: #e0e0e0;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --tag-bg: #e0e7ff;
-  --tag-text: #3730a3;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-primary: #1a1a1a;
-    --bg-secondary: #2d2d2d;
-    --text-primary: #ffffff;
-    --text-secondary: #b0b0b0;
-    --border: #404040;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --tag-bg: #312e81;
-    --tag-text: #c7d2fe;
-  }
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  transition: background-color 0.2s, color 0.2s;
-  padding: 1rem;
-  line-height: 1.5;
-}
-
-.container {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-h1 {
-  font-size: 2rem;
-  margin-bottom: 2rem;
-}
-
-h2 {
-  font-size: 1.5rem;
-  margin-bottom: 1.5rem;
-  color: var(--text-secondary);
-}
-
-form {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.form-group:last-child {
-  margin-bottom: 0;
-}
-
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-input, textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.375rem;
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: 1rem;
-}
-
-textarea {
-  resize: vertical;
-  min-height: 100px;
-}
-
-input:focus, textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-}
-
-button {
-  background-color: var(--accent);
-  color: white;
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  cursor: pointer;
-  font-weight: 500;
-  transition: background-color 0.2s;
-}
-
-button:hover {
-  background-color: var(--accent-hover);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background-color: var(--text-secondary);
-}
-
-.btn-secondary:hover {
-  background-color: var(--text-primary);
-}
-
-.btn-danger {
-  background-color: #dc2626;
-}
-
-.btn-danger:hover {
-  background-color: #b91c1c;
-}
-
-#link-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.link-row {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  transition: box-shadow 0.2s;
-}
-
-.link-row:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-@media (prefers-color-scheme: dark) {
-  .link-row:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  }
-}
-
-.link-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-}
-
-.link-title a {
-  color: var(--accent);
-  text-decoration: none;
-}
-
-.link-title a:hover {
-  text-decoration: underline;
-}
-
-.link-url {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  word-break: break-all;
-  margin-bottom: 0.75rem;
-}
-
-.link-description {
-  color: var(--text-secondary);
-  margin-bottom: 0.75rem;
-}
-
-.link-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.link-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.tag {
-  display: inline-block;
-  background-color: var(--tag-bg);
-  color: var(--tag-text);
-  padding: 0.25rem 0.75rem;
-  border-radius: 1rem;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.link-date {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-.link-actions {
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
-}
-
-.link-actions button {
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
-}
-
-.empty-state {
-  text-align: center;
-  padding: 3rem 1.5rem;
-  color: var(--text-secondary);
-}
-
-.empty-state p {
-  margin-bottom: 0.5rem;
-}
-
-.filter-form {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 0.5rem;
-  padding: 1.5rem;
-  margin-bottom: 2rem;
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  align-items: flex-end;
-}
-
-.filter-form-group {
-  flex: 1;
-  min-width: 200px;
-}
-
-.filter-form-group label {
-  margin-bottom: 0.5rem;
-}
-
-.filter-form-group input {
-  margin-bottom: 0;
-}
-
-.filter-form button {
-  margin: 0;
-}
-
-.filter-form a {
-  padding: 0.75rem 1.5rem;
-  background-color: var(--text-secondary);
-  color: white;
-  text-decoration: none;
-  border-radius: 0.375rem;
-  font-size: 1rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-  display: inline-block;
-}
-
-.filter-form a:hover {
-  background-color: var(--text-primary);
-}
-"#;
-
 /// Full HTML document layout.
 ///
-/// Includes the locally vendored HTMX and SSE extension, plus the dashboard
-/// styles with dark-mode support and a centered container.
+/// Includes the locally vendored HTMX and SSE extension, plus the themeable
+/// stylesheet generated from `src/input.css`.
 #[must_use]
 pub fn layout(title: &str, body: Markup) -> Markup {
     html! {
@@ -361,7 +72,9 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 script src="/static/htmx.min.js" {}
                 script src="/static/sse.js" {}
                 link rel="stylesheet" href="/static/tailwind.css";
-                style { (maud::PreEscaped(STYLES)) }
+                script {
+                    (maud::PreEscaped(r"(() => { const saved = localStorage.getItem('atlas-theme'); if (saved) document.documentElement.dataset.theme = saved; window.setAtlasTheme = (value) => { document.documentElement.dataset.theme = value; localStorage.setItem('atlas-theme', value); }; document.addEventListener('DOMContentLoaded', () => { if (saved) document.getElementById('theme').value = saved; }); })();"))
+                }
             }
             body {
                 (body)
@@ -385,9 +98,10 @@ pub fn render_link_list(links: &[Link]) -> Markup {
     // attributes lived on a parent, the binding would be lost after one swap.
     if links.is_empty() {
         return html! {
-            div id="link-list" sse-swap="created,updated,deleted" hx-swap="outerHTML" {
-                div class="empty-state" {
-                    p { "No links yet. Create one to get started!" }
+                div id="link-list" sse-swap="created,updated,deleted" hx-swap="outerHTML" {
+                    div class="empty-state" {
+                    strong { "The shelf is empty." }
+                    p { "Add the first useful thing you find." }
                 }
             }
         };
@@ -423,10 +137,8 @@ pub fn render_link_list(links: &[Link]) -> Markup {
                         }
                     }
                     div class="link-actions" {
-                        a href={"/links/" (link.id) "/edit"} {
-                            button type="button" class="btn-secondary" { "Edit" }
-                        }
-                        button type="button" class="btn-danger" hx-delete={"/links/" (link.id)}
+                        a class="button button-secondary" href={"/links/" (link.id) "/edit"} { "Edit" }
+                        button type="button" class="button-danger" hx-delete={"/links/" (link.id)}
                                 hx-target="#link-list" hx-swap="outerHTML"
                                 hx-confirm="Are you sure?" { "Delete" }
                     }
@@ -440,6 +152,7 @@ pub fn render_link_list(links: &[Link]) -> Markup {
 ///
 /// # Errors
 /// Returns [`AppError::Database`] if loading the links fails.
+#[allow(clippy::too_many_lines)]
 pub async fn index(
     State(state): State<AppState>,
     Query(params): Query<IndexParams>,
@@ -451,8 +164,11 @@ pub async fn index(
     };
 
     let form_html = html! {
-        h2 { "Add a Link" }
-        form hx-post="/links" hx-target="#link-list" hx-swap="outerHTML" hx-on::after-request="this.reset()" {
+        div class="section-heading" {
+            h2 { "Add to the shelf" }
+            p { "A small archive of useful things." }
+        }
+        form class="form-card" hx-post="/links" hx-target="#link-list" hx-swap="outerHTML" hx-on::after-request="this.reset()" {
             div class="form-group" {
                 label for="url" { "URL" }
                 input type="url" id="url" name="url" required;
@@ -466,26 +182,24 @@ pub async fn index(
                 textarea id="description" name="description" {}
             }
             div class="form-group" {
-                label for="tags" { "Tags (comma-separated)" }
-                input type="text" id="tags" name="tags";
+                label for="tags" { "Tags" }
+                input type="text" id="tags" name="tags" placeholder="rust, reading, tools";
             }
-            button type="submit" { "Add Link" }
+            button class="button-primary" type="submit" { "Save link" }
         }
     };
 
     let filter_html = if params.tag.is_some() || params.q.is_some() {
         html! {
             div class="filter-form" {
-                div class="filter-form-group" {
-                    p { "Active filters:" }
-                }
+                p { "Showing" }
                 @if let Some(tag) = &params.tag {
                     span { "Tag: " (tag) }
                 }
                 @if let Some(q) = &params.q {
                     span { "Search: " (q) }
                 }
-                a href="/" { "Clear" }
+                a href="/" { "Clear filters" }
             }
         }
     } else {
@@ -499,11 +213,51 @@ pub async fn index(
     };
 
     let body = html! {
-        div class="container" {
-            h1 { "Links Dashboard" }
-            (filter_html)
-            (form_html)
-            (list_html)
+        div class="shell" {
+            aside class="rail" {
+                a class="brand" href="/" aria-label="Link Atlas home" {
+                    span class="brand-mark" { "L" }
+                    span class="brand-name" { "link atlas" }
+                }
+                p class="rail-note" { "A living index for the things worth returning to." }
+                div class="rail-foot" {
+                    div class="rail-rule" {}
+                    div class="theme-picker" {
+                        label for="theme" { "Palette" }
+                        select id="theme" onchange="setAtlasTheme(this.value)" {
+                            option value="light" { "Paper / light" }
+                            option value="dark" { "Charcoal / dark" }
+                            option value="kanagawa" { "Kanagawa" }
+                            option value="catppuccin" { "Catppuccin" }
+                            option value="nord" { "Nord" }
+                            option value="gruvbox" { "Gruvbox" }
+                            option value="dracula" { "Dracula" }
+                            option value="tokyo-night" { "Tokyo Night" }
+                            option value="rose-pine" { "Rose Pine" }
+                        }
+                    }
+                }
+            }
+            main class="main" {
+                div class="masthead" {
+                    div {
+                        p class="eyebrow" { "Personal index / live shelf" }
+                        h1 { "Keep the good " em { "stuff." } }
+                    }
+                    p class="masthead-copy" { "Save the references, tools, and ideas that deserve a second visit." }
+                }
+                div class="content-grid" {
+                    section class="add-panel" { (form_html) }
+                    section class="library-panel" {
+                        div class="section-heading" {
+                            h2 { "Your collection" }
+                            p { "Updated live" }
+                        }
+                        (filter_html)
+                        (list_html)
+                    }
+                }
+            }
         }
     };
 
@@ -532,9 +286,10 @@ pub async fn edit_page(
     let tags_str = link.tags.join(", ");
 
     let body = html! {
-        div class="container" {
-            h1 { "Edit Link" }
-            form hx-put={"/links/" (link.id)} hx-target="#link-list" hx-swap="outerHTML" {
+        div class="main edit-shell" {
+            p class="eyebrow" { "Personal index / revise entry" }
+            h1 { "Edit this " em { "reference." } }
+            form class="form-card" hx-put={"/links/" (link.id)} hx-target="#link-list" hx-swap="outerHTML" {
                 div class="form-group" {
                     label for="url" { "URL" }
                     input type="url" id="url" name="url" value=(link.url) required;
@@ -555,9 +310,9 @@ pub async fn edit_page(
                     label for="tags" { "Tags (comma-separated)" }
                     input type="text" id="tags" name="tags" value=(tags_str);
                 }
-                button type="submit" { "Update Link" }
-                a href="/" {
-                    button type="button" class="btn-secondary" { "Cancel" }
+                div class="edit-actions" {
+                    button class="button-primary" type="submit" { "Save changes" }
+                    a class="button button-secondary" href="/" { "Cancel" }
                 }
             }
         }
