@@ -10,8 +10,7 @@ pre-commit:
   parallel: true
   commands:
     css-build:
-      run: just css-build
-      stage_fixed: true
+      run: just css-build && git add static/tailwind.css
     cargo-fmt:
       glob: "*.rs"
       run: cargo fmt --all

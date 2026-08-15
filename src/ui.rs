@@ -21,6 +21,7 @@ use crate::models::{Link, NewLink, UpdateLink};
 const HTMX_JS: &str = include_str!("../static/htmx.min.js");
 const HTMX_SSE_JS: &str = include_str!("../static/sse.js");
 const TAILWIND_CSS: &str = include_str!("../static/tailwind.css");
+const FAVICON_SVG: &str = include_str!("../static/favicon.svg");
 
 /// Serve an embedded script. Immutable caching is safe because the contents
 /// only change when the binary is rebuilt.
@@ -56,6 +57,17 @@ async fn tailwind_css() -> impl IntoResponse {
     )
 }
 
+#[allow(clippy::unused_async)]
+async fn favicon() -> impl IntoResponse {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=31536000, immutable"),
+        ],
+        FAVICON_SVG,
+    )
+}
+
 /// Full HTML document layout.
 ///
 /// Includes the locally vendored HTMX and SSE extension, plus the themeable
@@ -69,6 +81,7 @@ pub fn layout(title: &str, body: Markup) -> Markup {
                 meta charset="utf-8";
                 meta name="viewport" content="width=device-width, initial-scale=1";
                 title { (title) }
+                link rel="icon" href="/static/favicon.svg" type="image/svg+xml";
                 script src="/static/htmx.min.js" {}
                 script src="/static/sse.js" {}
                 link rel="stylesheet" href="/static/tailwind.css";
@@ -386,6 +399,7 @@ pub fn router() -> Router<AppState> {
         .route("/static/htmx.min.js", axum::routing::get(htmx_js))
         .route("/static/sse.js", axum::routing::get(htmx_sse_js))
         .route("/static/tailwind.css", axum::routing::get(tailwind_css))
+        .route("/static/favicon.svg", axum::routing::get(favicon))
         .route("/", axum::routing::get(index))
         .route("/links/{id}/edit", axum::routing::get(edit_page))
         .route("/links", axum::routing::post(create_link))
