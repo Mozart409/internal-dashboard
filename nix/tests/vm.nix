@@ -51,8 +51,10 @@ pkgs.testers.runNixOSTest {
 
         # The UI renders and the generated spec is served.
         machine.succeed(f"curl -sSf {base}/ >/dev/null")
-        machine.succeed(f"curl -sSf {base}/api-docs/openapi.json | grep -q '\"openapi\"'")
-        machine.succeed(f"curl -sSf {base}/scalar >/dev/null")
+        machine.succeed(f"curl -sSf {base}/docs/openapi.json | grep -q '\"openapi\"'")
+        machine.succeed(f"curl -sSf {base}/docs >/dev/null")
+        machine.succeed(f"curl -sSf {base}/health/live >/dev/null")
+        machine.succeed(f"curl -sSf {base}/health/ready >/dev/null")
 
         # A link written over the API comes back out of it, which only works if
         # the embedded migrations ran against the provisioned database.

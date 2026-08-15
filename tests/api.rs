@@ -546,11 +546,11 @@ async fn post_links_rejects_a_blank_title_with_400(pool: PgPool) {
 async fn openapi_document_nests_the_api_prefix_exactly_once(pool: PgPool) {
     let app = common::spawn(pool).await;
 
-    let (status, doc) = get_json(&app, "/api-docs/openapi.json").await;
+    let (status, doc) = get_json(&app, "/docs/openapi.json").await;
     assert_eq!(
         status,
         StatusCode::OK,
-        "the generated spec must be served at /api-docs/openapi.json"
+        "the generated spec must be served at /docs/openapi.json"
     );
 
     let paths = doc
@@ -587,7 +587,7 @@ async fn openapi_document_nests_the_api_prefix_exactly_once(pool: PgPool) {
 async fn openapi_document_lists_all_five_link_operations(pool: PgPool) {
     let app = common::spawn(pool).await;
 
-    let (status, doc) = get_json(&app, "/api-docs/openapi.json").await;
+    let (status, doc) = get_json(&app, "/docs/openapi.json").await;
     assert_eq!(status, StatusCode::OK);
 
     let paths = doc
@@ -620,7 +620,7 @@ async fn openapi_document_lists_all_five_link_operations(pool: PgPool) {
 async fn the_documented_paths_are_the_paths_that_actually_serve(pool: PgPool) {
     let app = common::spawn(pool).await;
 
-    let (_, doc) = get_json(&app, "/api-docs/openapi.json").await;
+    let (_, doc) = get_json(&app, "/docs/openapi.json").await;
     let paths = doc
         .get("paths")
         .and_then(Value::as_object)
@@ -647,14 +647,14 @@ async fn the_api_docs_ui_is_served(pool: PgPool) {
 
     let res = app
         .client
-        .get(app.url("/scalar"))
+        .get(app.url("/docs"))
         .send()
         .await
         .expect("docs UI request");
     let status = res.status();
     assert!(
         status.is_success(),
-        "/scalar must serve the API docs, got {status}"
+        "/docs must serve the API docs, got {status}"
     );
 }
 
@@ -664,7 +664,7 @@ async fn the_openapi_document_is_served_as_json(pool: PgPool) {
 
     let res = app
         .client
-        .get(app.url("/api-docs/openapi.json"))
+        .get(app.url("/docs/openapi.json"))
         .send()
         .await
         .expect("openapi request");

@@ -134,8 +134,11 @@ Then open <http://127.0.0.1:3000>.
 | `GET /events` | SSE stream of `created` / `updated` / `deleted` events |
 | `GET /api/v1/links` | List links; supports `?tag=` and `?q=` |
 | `GET/POST/PUT/DELETE /api/v1/links[/{id}]` | JSON CRUD |
-| `GET /api-docs/openapi.json` | Generated OpenAPI 3.1 document |
-| `GET /scalar` | Scalar API reference |
+| `GET /docs/openapi.json` | Generated OpenAPI 3.1 document |
+| `GET /docs` | Scalar API reference |
+| `GET /health` | Health check; checks PostgreSQL |
+| `GET /health/live` | Liveness probe |
+| `GET /health/ready` | Readiness probe; checks PostgreSQL |
 | `POST/GET /mcp` | MCP streamable-HTTP endpoint |
 
 ## Connecting Claude to the MCP server

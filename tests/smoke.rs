@@ -3,6 +3,7 @@
 
 mod common;
 
+use reqwest::StatusCode;
 use sqlx::PgPool;
 
 #[sqlx::test]
@@ -37,4 +38,21 @@ async fn migrations_are_applied_to_the_test_database(pool: PgPool) {
         .expect("links table should exist in the test database");
 
     assert_eq!(count, 0);
+}
+
+#[sqlx::test]
+async fn health_probes_report_process_and_database_health(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    let (status, body) = app.get("/health").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"status":"ok"}"#);
+
+    let (status, body) = app.get("/health/live").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"status":"ok"}"#);
+
+    let (status, body) = app.get("/health/ready").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, r#"{"status":"ok"}"#);
 }

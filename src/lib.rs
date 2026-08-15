@@ -21,6 +21,25 @@ use utoipa_scalar::{Scalar, Servable as _};
 
 use crate::events::AppState;
 
+async fn liveness() -> axum::Json<serde_json::Value> {
+    axum::Json(serde_json::json!({ "status": "ok" }))
+}
+
+async fn readiness(
+    axum::extract::State(state): axum::extract::State<AppState>,
+) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    match sqlx::query("select 1").execute(&state.pool).await {
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            axum::Json(serde_json::json!({ "status": "ok" })),
+        ),
+        Err(_) => (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({ "status": "unavailable" })),
+        ),
+    }
+}
+
 /// Compose every surface into one router.
 ///
 /// This is the single definition of the app's routing, shared by the binary and
@@ -42,13 +61,16 @@ pub fn build_router(state: AppState) -> axum::Router {
         .merge(sse::router())
         .merge(api_router)
         .route(
-            "/api-docs/openapi.json",
+            "/docs/openapi.json",
             axum::routing::get(move || {
                 let spec = spec.clone();
                 async move { axum::Json(spec) }
             }),
         )
-        .merge(Scalar::with_url("/scalar", openapi))
+        .merge(Scalar::with_url("/docs", openapi))
+        .route("/health", axum::routing::get(readiness))
+        .route("/health/live", axum::routing::get(liveness))
+        .route("/health/ready", axum::routing::get(readiness))
         .nest_service("/mcp", mcp::service(state.clone()))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
