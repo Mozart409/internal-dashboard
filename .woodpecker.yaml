@@ -10,41 +10,96 @@ clone:
       depth: 0
       tags: true
 
+variables:
+  - &nix_image 'nixos/nix:latest'
+  - &nix_env
+    # Compile against the committed .sqlx/ cache; the tests still talk to the
+    # postgres service below at runtime.
+    SQLX_OFFLINE: "true"
+    DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/dashboard
+    # Points at the bundle the first command below assembles, rather than the
+    # image default under the read-only nix store. Set here so it applies to
+    # `nix develop` without depending on an `export` carrying between commands.
+    NIX_SSL_CERT_FILE: /tmp/ca-bundle.crt
+    SSL_CERT_FILE: /tmp/ca-bundle.crt
+    NIX_CONFIG: |
+      experimental-features = nix-command flakes
+      # `.internal`, not `.local`: getaddrinfo routes `.local` to mDNS, and the
+      # nixos/nix image carries no avahi/nss-mdns, so the name never resolved and
+      # nix silently fell back to cache.nixos.org for the whole toolchain.
+      substituters = https://cache.homelab.internal/homelab https://cache.nixos.org/
+      trusted-public-keys = homelab:aswnRAo2zbP13gGnUTCINX78X/lURQgPAfrgNpHpQpY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+  # The image ships its own CA bundle inside the read-only nix store and
+  # points NIX_SSL_CERT_FILE at it, so the agent host trusting the Homelab
+  # step-ca root does not carry into this container. Without the root the
+  # cache above fails TLS and nix quietly drops it -- the substituter is
+  # disabled with a warning and the whole toolchain comes from
+  # cache.nixos.org, which is what every run did before this file existed.
+  - &ca_setup |
+    cat /etc/ssl/certs/ca-bundle.crt nix/homelab-root-ca.pem > /tmp/ca-bundle.crt
+    # Nix refuses to evaluate a flake in a repo it considers foreign-owned,
+    # and the clone step's uid does not match this step container's.
+    git config --global --add safe.directory "$CI_WORKSPACE"
+
 steps:
+  # fmt + clippy, with the compiled dependency tree cached through Nix.
+  #
+  # fmt/clippy run as crane derivations (`.#checks.<system>.*`), so their
+  # dependency build is a real Nix store path the cache-push step below can
+  # push to Attic. `cargo test`/`prepare-check` can't join them the same way:
+  # they need the live postgres service below, and a sandboxed `nix build` has
+  # no network path to it. Those stay ordinary `nix develop` commands, seeded
+  # from `legacyPackages.<system>.cargo-artifacts` (the same dependency build)
+  # so they aren't recompiling the whole dependency tree from scratch.
   - name: checks
-    image: nixos/nix:latest
-    environment:
-      # Compile against the committed .sqlx/ cache; the tests still talk to the
-      # postgres service below at runtime.
-      SQLX_OFFLINE: "true"
-      DATABASE_URL: postgres://dashboard:dashboard@postgres:5432/dashboard
-      # Points at the bundle the first command below assembles, rather than the
-      # image default under the read-only nix store. Set here so it applies to
-      # `nix develop` without depending on an `export` carrying between commands.
-      NIX_SSL_CERT_FILE: /tmp/ca-bundle.crt
-      SSL_CERT_FILE: /tmp/ca-bundle.crt
-      NIX_CONFIG: |
-        experimental-features = nix-command flakes
-        # `.internal`, not `.local`: getaddrinfo routes `.local` to mDNS, and the
-        # nixos/nix image carries no avahi/nss-mdns, so the name never resolved and
-        # nix silently fell back to cache.nixos.org for the whole toolchain.
-        substituters = https://cache.homelab.internal/homelab https://cache.nixos.org/
-        trusted-public-keys = homelab:aswnRAo2zbP13gGnUTCINX78X/lURQgPAfrgNpHpQpY= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+    image: *nix_image
+    environment: *nix_env
     commands:
-      # The image ships its own CA bundle inside the read-only nix store and
-      # points NIX_SSL_CERT_FILE at it, so the agent host trusting the Homelab
-      # step-ca root does not carry into this container. Without the root the
-      # cache above fails TLS and nix quietly drops it — the substituter is
-      # disabled with a warning and the whole toolchain comes from
-      # cache.nixos.org, which is what every run has been doing so far.
-      - cat /etc/ssl/certs/ca-bundle.crt nix/homelab-root-ca.pem > /tmp/ca-bundle.crt
-      # Same command the local hooks run: fmt, clippy (pedantic denied), the
-      # full test suite, sqlx cache freshness, keep-sorted, cog.
+      - *ca_setup
+      # Realize the dev shell first and fail fast/legibly if egress is the
+      # problem, rather than have every later command hang inexplicably.
+      # --profile also GC-roots the closure, which cache-push needs below.
+      - 'timeout 900 nix develop --profile ./.ci-profile . --command true || { echo "FAIL - could not realize the dev shell (usually DNS/egress from the agent, not the code)"; exit 1; }'
+      - 'nix build --no-link --print-build-logs .#checks.x86_64-linux.fmt .#checks.x86_64-linux.clippy'
+      - 'cp -r --no-preserve=mode,ownership "$(nix build --no-link --print-out-paths .#legacyPackages.x86_64-linux.cargo-artifacts)/target" ./target 2>/dev/null || true'
       # nix develop does not preserve SQLX_OFFLINE from the outer container
       # environment, so set it inside the dev shell where Cargo runs. The
-      # prepare-check recipe also needs the live service schema, unlike the
-      # compile and test steps, so apply migrations before running the suite.
-      - nix develop --command sh -c 'export DATABASE_URL=postgres://dashboard:dashboard@postgres:5432/dashboard SQLX_OFFLINE=true; sqlx migrate run; just ci'
+      # prepare-check recipe needs the live service schema, unlike test, so
+      # apply migrations before running the suite. fmt-check/clippy are
+      # dropped from this list -- the crane derivations above already cover
+      # them.
+      - nix develop --profile ./.ci-profile . --command sh -c 'export DATABASE_URL=postgres://dashboard:dashboard@postgres:5432/dashboard SQLX_OFFLINE=true; sqlx migrate run; just test; just sorted-check; just prepare-check; cog check'
+
+  # Populate the cache so the next run skips dependency recompilation. Gated
+  # to trusted events: Woodpecker withholds secrets from pull_request by
+  # default, and this must stay that way -- a fork PR could otherwise
+  # exfiltrate the push token. Reads stay public, so PRs still get full cache
+  # benefit from what earlier trusted runs pushed.
+  - name: cache-push
+    image: *nix_image
+    depends_on: [checks]
+    environment:
+      <<: *nix_env
+      ATTIC_PUSH_TOKEN:
+        from_secret: ATTIC_PUSH_TOKEN
+    commands:
+      - *ca_setup
+      # Trailing slash is deliberate: Attic joins the API endpoint with the
+      # cache name, and without it the binary-cache URL can render as
+      # `https://cache.homelab.internalhomelab`.
+      - nix run nixpkgs#attic-client -- login homelab https://cache.homelab.internal/ "$ATTIC_PUSH_TOKEN"
+      # Push both the dev shell/toolchain closure AND the compiled dependency
+      # tree. `.ci-profile` alone holds the toolchain but not cargo-artifacts
+      # -- that's a build input, not part of any output's runtime closure, so
+      # it would never get uploaded otherwise, and every run would recompile
+      # every dependency from scratch again.
+      - 'nix run nixpkgs#attic-client -- push homelab:homelab ./.ci-profile "$(nix build --no-link --print-out-paths .#legacyPackages.x86_64-linux.cargo-artifacts)"'
+    when:
+      - event: push
+        branch: main
+      - event: tag
+    # A cache push failing must not fail a pipeline whose code is already green.
+    failure: ignore
 
 services:
   - name: postgres
