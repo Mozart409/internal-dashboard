@@ -205,11 +205,66 @@ impl ServerHandler for LinksServer {}
 
 /// Factory function to create the streamable HTTP service.
 /// Used by main.rs to nest the MCP server into the axum router at `/mcp`.
+///
+/// Reads `MCP_ALLOWED_HOSTS` (comma-separated) to widen rmcp's default
+/// DNS-rebinding protection, which otherwise only accepts a loopback `Host`
+/// header -- so anything reached through a reverse proxy on a real hostname
+/// (Caddy, an MCP aggregator like axon-gateway) gets a 403 unless the
+/// fronting name is listed here.
 #[must_use]
 pub fn service(state: AppState) -> StreamableHttpService<LinksServer, LocalSessionManager> {
     let handler = LinksServer::new(state);
     let session_manager = Arc::new(LocalSessionManager::default());
-    let config = StreamableHttpServerConfig::default();
+    let mut config = StreamableHttpServerConfig::default();
+    if let Some(hosts) = parse_allowed_hosts(std::env::var("MCP_ALLOWED_HOSTS").ok().as_deref()) {
+        config = config.with_allowed_hosts(hosts);
+    }
 
     StreamableHttpService::new(move || Ok(handler.clone()), session_manager, config)
+}
+
+/// Parse a comma-separated allow-list, treating "set but empty" as unset.
+///
+/// Returning `Some(vec![])` would be actively dangerous: `service` passes it to
+/// rmcp's `with_allowed_hosts`, and an empty allow-list rejects *every* inbound
+/// `Host` header -- a typo'd or empty `MCP_ALLOWED_HOSTS` would silently produce
+/// a server that accepts no connections at all. Collapsing that to `None` falls
+/// back to rmcp's loopback-only default instead, the safe reading of "unset".
+fn parse_allowed_hosts(raw: Option<&str>) -> Option<Vec<String>> {
+    let hosts: Vec<String> = raw?
+        .split(',')
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty())
+        .collect();
+
+    if hosts.is_empty() { None } else { Some(hosts) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_allowed_hosts;
+
+    #[test]
+    fn unset_is_none() {
+        assert_eq!(parse_allowed_hosts(None), None);
+    }
+
+    #[test]
+    fn splits_trims_and_drops_empty_items() {
+        assert_eq!(
+            parse_allowed_hosts(Some(" a.example.com , localhost ,, ")),
+            Some(vec!["a.example.com".to_string(), "localhost".to_string()])
+        );
+    }
+
+    #[test]
+    fn blank_collapses_to_none() {
+        for blank in [" , ", "", ",", "   ", ",,,"] {
+            assert_eq!(
+                parse_allowed_hosts(Some(blank)),
+                None,
+                "{blank:?} should collapse to None"
+            );
+        }
+    }
 }

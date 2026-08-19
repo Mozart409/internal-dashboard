@@ -144,6 +144,23 @@ in
       '';
     };
 
+    mcpAllowedHosts = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [
+        "dashboard.example.ts.net"
+        "localhost"
+      ];
+      description = ''
+        `Host` header values the `/mcp` endpoint accepts, beyond rmcp's
+        built-in loopback-only default. Empty (the default) keeps that
+        default, which rejects any request whose `Host` header isn't a bare
+        loopback address — so anything reached through a reverse proxy on a
+        real hostname (Caddy, an MCP aggregator like axon-gateway) gets a 403
+        until its fronting name is listed here.
+      '';
+    };
+
     user = mkOption {
       type = types.str;
       default = "internal-dashboard";
@@ -562,6 +579,9 @@ in
         RUST_LOG = cfg.logLevel;
         DB_MAX_CONNECTIONS = toString cfg.pool.maxConnections;
         DB_ACQUIRE_TIMEOUT_SECS = toString cfg.pool.acquireTimeout;
+      }
+      // optionalAttrs (cfg.mcpAllowedHosts != [ ]) {
+        MCP_ALLOWED_HOSTS = concatMapStringsSep "," (h: h) cfg.mcpAllowedHosts;
       }
       // optionalAttrs db.createLocally { DATABASE_URL = localUrl; }
       // optionalAttrs (!db.createLocally && db.url != null) { DATABASE_URL = db.url; }

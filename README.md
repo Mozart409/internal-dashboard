@@ -75,6 +75,7 @@ overlays.
 |---|---|---|
 | `address`, `port` | `127.0.0.1`, `3000` | Bind address. The dashboard has **no authentication**, so leave it on loopback unless a proxy provides some. |
 | `openFirewall` | `false` | Opens `port` in the firewall. |
+| `mcpAllowedHosts` | `[ ]` | `Host` header values `/mcp` accepts beyond rmcp's loopback-only default. Set this to whatever hostname fronts the dashboard (a Caddy vhost, an MCP aggregator) or every request through it gets a 403. |
 | `database.createLocally` | `true` | Provision PostgreSQL here. Turn it off and set `database.url`, or `DATABASE_URL` in `environmentFile`, to use a server you already run. |
 | `database.tuning.memoryMB` | `1024` | The memory budget PostgreSQL may treat as its own. `shared_buffers`, `effective_cache_size`, `maintenance_work_mem` and `work_mem` are all derived from it, so it is the one number to change. |
 | `database.tuning.statementTimeout` | `30s` | Also applies to migrations — raise it before adding one that indexes a large table. |
