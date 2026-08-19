@@ -3,6 +3,15 @@ name = "internal-dashboard"
 version = "0.2.1"
 edition = "2024"
 
+# Tuned for compile speed over runtime speed — this is an internal dashboard,
+# not perf-critical. opt-level 3 vs 2 costs real compile time for little gain
+# here; codegen-units above the default 16 trades a bit more of that for more
+# parallelism. LTO is left off (the default) since it's the single biggest
+# release-compile-time cost of all these knobs.
+[profile.release]
+opt-level = 2
+codegen-units = 32
+
 [lints.rust]
 unsafe_code = "forbid"
 

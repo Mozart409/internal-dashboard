@@ -86,32 +86,41 @@
         pkgs = nixpkgsFor system;
       in {
         default = pkgs.mkShell {
-          packages = with pkgs; [
-            # keep-sorted start
-            cargo
-            # cargo set-version, which cog's pre_bump_hooks call to move the
-            # version in Cargo.toml.
-            cargo-edit
-            cargo-watch
-            clippy
-            cocogitto
-            git
-            just
-            keep-sorted
-            lefthook
-            nixfmt
-            podman-compose
-            postgresql_18
-            rust-analyzer
-            rustc
-            rustfmt
-            sqlx-cli
-            tailwindcss_4
-            # keep-sorted end
-          ];
+          packages = with pkgs;
+            [
+              # keep-sorted start
+              cargo
+              # cargo set-version, which cog's pre_bump_hooks call to move the
+              # version in Cargo.toml.
+              cargo-edit
+              cargo-watch
+              clippy
+              cocogitto
+              git
+              just
+              keep-sorted
+              lefthook
+              nixfmt
+              podman-compose
+              postgresql_18
+              rust-analyzer
+              rustc
+              rustfmt
+              sqlx-cli
+              tailwindcss_4
+              # keep-sorted end
+            ]
+            # mold only ships for Linux in nixpkgs (aarch64-darwin support is
+            # newer/less battle-tested, and there's no x86_64-darwin build at
+            # all) — .cargo/config.toml only points at it on linux-gnu targets
+            # to match, so it's simply unused, not broken, on Darwin.
+            ++ lib.optionals stdenv.isLinux [mold];
 
           shellHook = ''
             lefthook install
+            if [ -d target ]; then
+              du -sh target
+            fi
           '';
         };
       }

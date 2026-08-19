@@ -1,0 +1,12 @@
+# mold is dramatically faster than the default bfd linker, and every
+# integration test target (db, api, ui, sse, mcp) links a full copy of the
+# dependency graph, so this speeds up `cargo test` as much as `cargo build`.
+#
+# Linux-only: nixpkgs' mold has no x86_64-darwin build and aarch64-darwin
+# support is newer/less proven, so the devShell (flake.nix) only adds mold on
+# Linux — these stanzas are simply inert there, not broken.
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
+
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "link-arg=-fuse-ld=mold"]
