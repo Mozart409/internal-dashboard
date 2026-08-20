@@ -179,7 +179,6 @@ pub async fn index(
     let form_html = html! {
         div class="section-heading" {
             h2 { "Add to the shelf" }
-            p { "A small archive of useful things." }
         }
         form class="form-card" hx-post="/links" hx-target="#link-list" hx-swap="outerHTML" hx-on::after-request="this.reset()" {
             div class="form-group" {
@@ -219,55 +218,43 @@ pub async fn index(
         html! {}
     };
 
-    let list_html = html! {
-        div hx-ext="sse" sse-connect="/events" {
-            (render_link_list(&links))
-        }
-    };
-
     let body = html! {
         div class="shell" {
-            aside class="rail" {
-                a class="brand" href="/" aria-label="Link Atlas home" {
-                    span class="brand-mark" { "L" }
-                    span class="brand-name" { "link atlas" }
-                }
-                p class="rail-note" { "A living index for the things worth returning to." }
-                div class="rail-foot" {
-                    div class="rail-rule" {}
-                    div class="theme-picker" {
-                        label for="theme" { "Palette" }
-                        select id="theme" onchange="setAtlasTheme(this.value)" {
-                            option value="light" { "Paper / light" }
-                            option value="dark" { "Charcoal / dark" }
-                            option value="kanagawa" { "Kanagawa" }
-                            option value="catppuccin" { "Catppuccin" }
-                            option value="nord" { "Nord" }
-                            option value="gruvbox" { "Gruvbox" }
-                            option value="dracula" { "Dracula" }
-                            option value="tokyo-night" { "Tokyo Night" }
-                            option value="rose-pine" { "Rose Pine" }
-                        }
-                    }
-                }
-            }
             main class="main" {
                 div class="masthead" {
                     div {
-                        p class="eyebrow" { "Personal index / live shelf" }
                         h1 { "Keep the good " em { "stuff." } }
+                        p class="masthead-copy" { "Save the references, tools, and ideas that deserve a second visit." }
                     }
-                    p class="masthead-copy" { "Save the references, tools, and ideas that deserve a second visit." }
+                    div class="masthead-controls" {
+                        button type="button" class="add-toggle" onclick="document.getElementById('add-form').toggleAttribute('hidden')" {
+                            (maud::PreEscaped(r#"<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>"#))
+                            "Add link"
+                        }
+                        div class="theme-picker" {
+                            select id="theme" onchange="setAtlasTheme(this.value)" {
+                                option value="light" { "Light" }
+                                option value="dark" { "Dark" }
+                                option value="kanagawa" { "Kanagawa" }
+                                option value="catppuccin" { "Catppuccin" }
+                                option value="nord" { "Nord" }
+                                option value="gruvbox" { "Gruvbox" }
+                                option value="dracula" { "Dracula" }
+                                option value="tokyo-night" { "Tokyo Night" }
+                                option value="rose-pine" { "Rose Pine" }
+                            }
+                        }
+                    }
                 }
                 div class="content-grid" {
-                    section class="add-panel" { (form_html) }
+                    div id="add-form" class="add-form-panel" hidden {
+                        (form_html)
+                    }
                     section class="library-panel" {
-                        div class="section-heading" {
-                            h2 { "Your collection" }
-                            p { "Updated live" }
-                        }
                         (filter_html)
-                        (list_html)
+                        div hx-ext="sse" sse-connect="/events" {
+                            (render_link_list(&links))
+                        }
                     }
                 }
             }
