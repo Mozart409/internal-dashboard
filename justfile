@@ -51,9 +51,11 @@ test-watch: db-ready
 run:
     cargo run
 
-# Run the server, restarting on every file change
+# Run the server, restarting on every file change. Compile offline against the
+# committed .sqlx/ cache so a freshly-created database (not yet migrated by the
+# app) does not break compile-time query verification.
 dev:
-    cargo watch -c -x run
+    SQLX_OFFLINE=true cargo watch -c -x run
 
 # Generate CHANGELOG.md from conventional commits
 changelog:
