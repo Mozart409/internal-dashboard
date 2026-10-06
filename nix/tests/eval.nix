@@ -7,48 +7,43 @@
   self,
   nixpkgs,
   pkgs,
-}:
-
-let
+}: let
   lib = nixpkgs.lib;
 
   # The module system does the merging: a shallow `//` here would drop
   # `enable = true` the moment a case sets anything else under `services`.
-  evalWith =
-    modules:
+  evalWith = modules:
     (lib.nixosSystem {
-      modules = [
-        self.nixosModules.default
-        {
-          nixpkgs.hostPlatform = "x86_64-linux";
-          system.stateVersion = "26.11";
-        }
-      ]
-      ++ modules;
+      modules =
+        [
+          self.nixosModules.default
+          {
+            nixpkgs.hostPlatform = "x86_64-linux";
+            system.stateVersion = "26.11";
+          }
+        ]
+        ++ modules;
     }).config;
 
-  enabled =
-    module:
+  enabled = module:
     evalWith [
-      { services.internal-dashboard.enable = true; }
+      {services.internal-dashboard.enable = true;}
       module
     ];
 
   # Only this module's assertions. A bare configuration always trips the base
   # system's own ones — no root filesystem, no bootloader — and those say
   # nothing about whether the dashboard is configured sanely.
-  failures =
-    config:
+  failures = config:
     lib.filter (message: lib.hasInfix "services.internal-dashboard" message) (
       map (a: a.message) (lib.filter (a: !a.assertion) config.assertions)
     );
-  saysNothingIsWrong = config: failures config == [ ];
-  complainsAbout =
-    config: fragment: lib.any (message: lib.hasInfix fragment message) (failures config);
+  saysNothingIsWrong = config: failures config == [];
+  complainsAbout = config: fragment: lib.any (message: lib.hasInfix fragment message) (failures config);
 
   # --- the configurations under test -----------------------------------------
 
-  default = enabled { };
+  default = enabled {};
   defaultUnit = default.systemd.services.internal-dashboard;
 
   external = enabled {
@@ -117,7 +112,7 @@ let
   };
 
   noExtensions = enabled {
-    services.internal-dashboard.database.extensions = [ ];
+    services.internal-dashboard.database.extensions = [];
   };
 
   # --- the checks ------------------------------------------------------------
@@ -134,7 +129,8 @@ let
     {
       name = "the service runs as its own user and group";
       ok =
-        defaultUnit.serviceConfig.User == "internal-dashboard"
+        defaultUnit.serviceConfig.User
+        == "internal-dashboard"
         && defaultUnit.serviceConfig.Group == "internal-dashboard";
     }
     {
@@ -146,7 +142,8 @@ let
     {
       name = "BIND_ADDR, RUST_LOG and the pool reach the unit";
       ok =
-        defaultUnit.environment.BIND_ADDR == "127.0.0.1:3000"
+        defaultUnit.environment.BIND_ADDR
+        == "127.0.0.1:3000"
         && defaultUnit.environment.RUST_LOG == "info"
         && defaultUnit.environment.DB_MAX_CONNECTIONS == "10"
         && defaultUnit.environment.DB_ACQUIRE_TIMEOUT_SECS == "5";
@@ -170,25 +167,27 @@ let
       name = "createLocally provisions the database and its owner";
       ok =
         default.services.postgresql.enable
-        && default.services.postgresql.ensureDatabases == [ "internal-dashboard" ]
+        && default.services.postgresql.ensureDatabases == ["internal-dashboard"]
         && lib.any (
           u: u.name == "internal-dashboard" && u.ensureDBOwnership
-        ) default.services.postgresql.ensureUsers;
+        )
+        default.services.postgresql.ensureUsers;
     }
     {
       name = "the hardening settings are applied";
       ok =
-        defaultUnit.serviceConfig.ProtectSystem == "strict"
+        defaultUnit.serviceConfig.ProtectSystem
+        == "strict"
         && defaultUnit.serviceConfig.NoNewPrivileges
         && defaultUnit.serviceConfig.PrivateTmp
         && lib.elem "@system-service" defaultUnit.serviceConfig.SystemCallFilter
-        &&
-          defaultUnit.serviceConfig.RestrictAddressFamilies == [
-            "AF_INET"
-            "AF_INET6"
-            "AF_NETLINK"
-            "AF_UNIX"
-          ];
+        && defaultUnit.serviceConfig.RestrictAddressFamilies
+        == [
+          "AF_INET"
+          "AF_INET6"
+          "AF_NETLINK"
+          "AF_UNIX"
+        ];
     }
     {
       # Without netlink, glibc cannot resolve a hostname, so an external
@@ -201,17 +200,19 @@ let
     {
       name = "all capabilities are dropped for an unprivileged port";
       ok =
-        defaultUnit.serviceConfig.AmbientCapabilities == [ ]
-        && defaultUnit.serviceConfig.CapabilityBoundingSet == [ "" ];
+        defaultUnit.serviceConfig.AmbientCapabilities
+        == []
+        && defaultUnit.serviceConfig.CapabilityBoundingSet == [""];
     }
     {
       name = "a privileged port keeps exactly CAP_NET_BIND_SERVICE";
-      ok = overriddenUnit.serviceConfig.AmbientCapabilities == [ "CAP_NET_BIND_SERVICE" ];
+      ok = overriddenUnit.serviceConfig.AmbientCapabilities == ["CAP_NET_BIND_SERVICE"];
     }
     {
       name = "address, port, log level and pool overrides land in the unit";
       ok =
-        overriddenUnit.environment.BIND_ADDR == "0.0.0.0:80"
+        overriddenUnit.environment.BIND_ADDR
+        == "0.0.0.0:80"
         && overriddenUnit.environment.RUST_LOG == "debug"
         && overriddenUnit.environment.DB_MAX_CONNECTIONS == "25"
         && overriddenUnit.environment.DB_ACQUIRE_TIMEOUT_SECS == "9";
@@ -247,7 +248,8 @@ let
     {
       name = "the tuned defaults are derived from the memory budget";
       ok =
-        default.services.postgresql.settings.shared_buffers == "256MB"
+        default.services.postgresql.settings.shared_buffers
+        == "256MB"
         && default.services.postgresql.settings.effective_cache_size == "768MB"
         && default.services.postgresql.settings.maintenance_work_mem == "64MB"
         && default.services.postgresql.settings.work_mem == "4MB";
@@ -255,7 +257,8 @@ let
     {
       name = "a bigger memory budget scales every derived value";
       ok =
-        tunedBig.services.postgresql.settings.shared_buffers == "2048MB"
+        tunedBig.services.postgresql.settings.shared_buffers
+        == "2048MB"
         && tunedBig.services.postgresql.settings.effective_cache_size == "6144MB"
         && tunedBig.services.postgresql.settings.maintenance_work_mem == "512MB"
         && tunedBig.services.postgresql.settings.work_mem == "30MB";
@@ -263,7 +266,8 @@ let
     {
       name = "the safety timeouts are set";
       ok =
-        default.services.postgresql.settings.statement_timeout == "30s"
+        default.services.postgresql.settings.statement_timeout
+        == "30s"
         && default.services.postgresql.settings.lock_timeout == "10s"
         && default.services.postgresql.settings.idle_in_transaction_session_timeout == "60s";
     }
@@ -278,15 +282,15 @@ let
     {
       name = "tuning can be switched off entirely";
       ok =
-        untuned.services.postgresql.settings.shared_buffers == "9GB"
+        untuned.services.postgresql.settings.shared_buffers
+        == "9GB"
         && !(untuned.services.postgresql.settings ? statement_timeout);
     }
     {
       name = "the extension setup unit runs before the dashboard";
-      ok =
-        let
-          setup = default.systemd.services.internal-dashboard-db-setup;
-        in
+      ok = let
+        setup = default.systemd.services.internal-dashboard-db-setup;
+      in
         lib.hasInfix "pg_trgm" setup.script
         && lib.elem "internal-dashboard.service" setup.before
         && setup.serviceConfig.Type == "oneshot";
@@ -321,13 +325,15 @@ let
     {
       name = "pgbouncer listens on a socket only, never on TCP";
       ok =
-        bouncing.services.pgbouncer.settings.pgbouncer.listen_addr == null
+        bouncing.services.pgbouncer.settings.pgbouncer.listen_addr
+        == null
         && bouncing.services.pgbouncer.settings.pgbouncer.unix_socket_dir == "/run/pgbouncer";
     }
     {
       name = "transaction pooling keeps prepared statements working";
       ok =
-        bouncing.services.pgbouncer.settings.pgbouncer.pool_mode == "transaction"
+        bouncing.services.pgbouncer.settings.pgbouncer.pool_mode
+        == "transaction"
         && bouncing.services.pgbouncer.settings.pgbouncer.max_prepared_statements == 200;
     }
     {
@@ -346,17 +352,23 @@ let
 
   failed = lib.filter (c: !c.ok) checks;
 
-  report = lib.concatMapStringsSep "\n" (c: "${if c.ok then "ok  " else "FAIL"}  ${c.name}") checks;
+  report =
+    lib.concatMapStringsSep "\n" (c: "${
+      if c.ok
+      then "ok  "
+      else "FAIL"
+    }  ${c.name}")
+    checks;
 in
+  if failed != []
+  then
+    throw ''
+      ${toString (lib.length failed)} of ${toString (lib.length checks)} module eval checks failed:
 
-if failed != [ ] then
-  throw ''
-    ${toString (lib.length failed)} of ${toString (lib.length checks)} module eval checks failed:
-
-    ${report}
-  ''
-else
-  pkgs.runCommand "internal-dashboard-module-eval"
+      ${report}
+    ''
+  else
+    pkgs.runCommand "internal-dashboard-module-eval"
     {
       # The report is plain prose, but discarding context keeps any store path
       # that ever leaks into a check name from dragging a Linux build into a
@@ -366,7 +378,7 @@ else
 
         ${report}
       '';
-      passAsFile = [ "report" ];
+      passAsFile = ["report"];
     }
     ''
       cp "$reportPath" "$out"

@@ -3,8 +3,10 @@
 # This needs a Linux builder, so `nix flake check` only offers it on Linux. It
 # has not been run on the macOS host the module was written on — see the note
 # in the README.
-{ self, pkgs }:
-
+{
+  self,
+  pkgs,
+}:
 pkgs.testers.runNixOSTest {
   name = "internal-dashboard";
 
@@ -16,27 +18,23 @@ pkgs.testers.runNixOSTest {
   nodes = {
     # The default shape: dashboard talking straight to a local PostgreSQL over
     # the peer-authenticated socket.
-    direct =
-      { pkgs, ... }:
-      {
-        imports = [ self.nixosModules.internal-dashboard ];
-        services.internal-dashboard.enable = true;
-        environment.systemPackages = [ pkgs.curl ];
-      };
+    direct = {pkgs, ...}: {
+      imports = [self.nixosModules.internal-dashboard];
+      services.internal-dashboard.enable = true;
+      environment.systemPackages = [pkgs.curl];
+    };
 
     # The same, with pgbouncer in the path and a non-default port, so both the
     # pooled connection string and the port plumbing get exercised.
-    pooled =
-      { pkgs, ... }:
-      {
-        imports = [ self.nixosModules.internal-dashboard ];
-        services.internal-dashboard = {
-          enable = true;
-          port = 8080;
-          database.pgbouncer.enable = true;
-        };
-        environment.systemPackages = [ pkgs.curl ];
+    pooled = {pkgs, ...}: {
+      imports = [self.nixosModules.internal-dashboard];
+      services.internal-dashboard = {
+        enable = true;
+        port = 8080;
+        database.pgbouncer.enable = true;
       };
+      environment.systemPackages = [pkgs.curl];
+    };
   };
 
   testScript = ''

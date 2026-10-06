@@ -2,7 +2,6 @@
   lib,
   rustPlatform,
 }:
-
 rustPlatform.buildRustPackage {
   pname = "internal-dashboard";
   # Read out of Cargo.toml rather than duplicated here, so `cog bump` moving the

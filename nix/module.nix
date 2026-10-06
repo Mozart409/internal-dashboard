@@ -3,15 +3,14 @@
   lib,
   pkgs,
   ...
-}:
-
-let
+}: let
   cfg = config.services.internal-dashboard;
   db = cfg.database;
   tuning = db.tuning;
   bouncer = db.pgbouncer;
 
-  inherit (lib)
+  inherit
+    (lib)
     concatMapStringsSep
     mkDefault
     mkEnableOption
@@ -32,10 +31,9 @@ let
   socketUrl = dir: port: "postgres:///${db.name}?host=${dir}&port=${toString port}&user=${cfg.user}";
 
   localUrl =
-    if bouncer.enable then
-      socketUrl "/run/pgbouncer" bouncer.port
-    else
-      socketUrl "/run/postgresql" 5432;
+    if bouncer.enable
+    then socketUrl "/run/pgbouncer" bouncer.port
+    else socketUrl "/run/postgresql" 5432;
 
   # `ensureDatabases` and `ensureUsers` run from postgresql-setup.service, not
   # from postgresql.service, so ordering after the latter alone would start the
@@ -43,10 +41,11 @@ let
   # is a oneshot, so `After=` on it waits for it to finish. It is looked up
   # rather than named outright, because older nixpkgs did this work in
   # postgresql.service's postStart and has no such unit to depend on.
-  postgresqlUnits = [
-    "postgresql.service"
-  ]
-  ++ lib.optional (config.systemd.services ? postgresql-setup) "postgresql-setup.service";
+  postgresqlUnits =
+    [
+      "postgresql.service"
+    ]
+    ++ lib.optional (config.systemd.services ? postgresql-setup) "postgresql-setup.service";
 
   # Peer authentication on the socket: pgbouncer checks the OS user behind the
   # connection, which is the dashboard and nothing else, so no password is
@@ -96,8 +95,14 @@ let
 
     # Random reads are nearly as cheap as sequential ones on an SSD, which is
     # what decides whether the planner will touch the trigram indexes at all.
-    random_page_cost = if tuning.diskType == "ssd" then "1.1" else "4.0";
-    effective_io_concurrency = if tuning.diskType == "ssd" then 200 else 2;
+    random_page_cost =
+      if tuning.diskType == "ssd"
+      then "1.1"
+      else "4.0";
+    effective_io_concurrency =
+      if tuning.diskType == "ssd"
+      then 200
+      else 2;
 
     # Nothing this dashboard does should run for 30 seconds, sit idle holding a
     # transaction open, or wait minutes on a lock.
@@ -110,12 +115,11 @@ let
     tcp_keepalives_interval = 10;
     tcp_keepalives_count = 6;
   };
-in
-{
+in {
   options.services.internal-dashboard = {
     enable = mkEnableOption "the internal link dashboard";
 
-    package = mkPackageOption pkgs "internal-dashboard" { };
+    package = mkPackageOption pkgs "internal-dashboard" {};
 
     address = mkOption {
       type = types.str;
@@ -146,7 +150,7 @@ in
 
     mcpAllowedHosts = mkOption {
       type = types.listOf types.str;
-      default = [ ];
+      default = [];
       example = [
         "dashboard.example.ts.net"
         "localhost"
@@ -206,7 +210,7 @@ in
 
     environment = mkOption {
       type = types.attrsOf types.str;
-      default = { };
+      default = {};
       example = {
         RUST_BACKTRACE = "1";
       };
@@ -275,7 +279,7 @@ in
 
       extensions = mkOption {
         type = types.listOf types.str;
-        default = [ "pg_trgm" ];
+        default = ["pg_trgm"];
         example = [
           "pg_trgm"
           "unaccent"
@@ -300,7 +304,7 @@ in
             types.str
           ]
         );
-        default = { };
+        default = {};
         example = {
           shared_buffers = "2GB";
           log_min_duration_statement = "500ms";
@@ -489,7 +493,7 @@ in
 
     services.postgresql = mkIf db.createLocally {
       enable = true;
-      ensureDatabases = [ db.name ];
+      ensureDatabases = [db.name];
       ensureUsers = [
         {
           name = cfg.user;
@@ -534,19 +538,19 @@ in
     };
 
     users.groups = optionalAttrs (cfg.group == "internal-dashboard") {
-      internal-dashboard = { };
+      internal-dashboard = {};
     };
 
-    networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [ cfg.port ];
+    networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [cfg.port];
 
     # Extensions have to exist before the dashboard runs its migrations, and
     # creating an untrusted one needs the superuser the dashboard is not.
-    systemd.services.internal-dashboard-db-setup = mkIf (db.createLocally && db.extensions != [ ]) {
+    systemd.services.internal-dashboard-db-setup = mkIf (db.createLocally && db.extensions != []) {
       description = "Create PostgreSQL extensions for the internal dashboard";
       after = postgresqlUnits;
       requires = postgresqlUnits;
-      before = [ "internal-dashboard.service" ];
-      wantedBy = [ "internal-dashboard.service" ];
+      before = ["internal-dashboard.service"];
+      wantedBy = ["internal-dashboard.service"];
 
       serviceConfig = {
         Type = "oneshot";
@@ -555,37 +559,41 @@ in
         Group = "postgres";
       };
 
-      script = concatMapStringsSep "\n" (ext: ''
-        ${config.services.postgresql.package}/bin/psql -d ${lib.escapeShellArg db.name} \
-          -tAc ${lib.escapeShellArg ''CREATE EXTENSION IF NOT EXISTS "${ext}"''}
-      '') db.extensions;
+      script =
+        concatMapStringsSep "\n" (ext: ''
+          ${config.services.postgresql.package}/bin/psql -d ${lib.escapeShellArg db.name} \
+            -tAc ${lib.escapeShellArg ''CREATE EXTENSION IF NOT EXISTS "${ext}"''}
+        '')
+        db.extensions;
     };
 
     systemd.services.internal-dashboard = {
       description = "Internal link dashboard";
-      wantedBy = [ "multi-user.target" ];
-      wants = [ "network-online.target" ];
-      after = [
-        "network-online.target"
-      ]
-      ++ optionals db.createLocally postgresqlUnits
-      ++ optionals (db.createLocally && bouncer.enable) [ "pgbouncer.service" ];
+      wantedBy = ["multi-user.target"];
+      wants = ["network-online.target"];
+      after =
+        [
+          "network-online.target"
+        ]
+        ++ optionals db.createLocally postgresqlUnits
+        ++ optionals (db.createLocally && bouncer.enable) ["pgbouncer.service"];
       requires =
         optionals db.createLocally postgresqlUnits
-        ++ optionals (db.createLocally && bouncer.enable) [ "pgbouncer.service" ];
+        ++ optionals (db.createLocally && bouncer.enable) ["pgbouncer.service"];
 
-      environment = {
-        BIND_ADDR = bindAddr;
-        RUST_LOG = cfg.logLevel;
-        DB_MAX_CONNECTIONS = toString cfg.pool.maxConnections;
-        DB_ACQUIRE_TIMEOUT_SECS = toString cfg.pool.acquireTimeout;
-      }
-      // optionalAttrs (cfg.mcpAllowedHosts != [ ]) {
-        MCP_ALLOWED_HOSTS = concatMapStringsSep "," (h: h) cfg.mcpAllowedHosts;
-      }
-      // optionalAttrs db.createLocally { DATABASE_URL = localUrl; }
-      // optionalAttrs (!db.createLocally && db.url != null) { DATABASE_URL = db.url; }
-      // cfg.environment;
+      environment =
+        {
+          BIND_ADDR = bindAddr;
+          RUST_LOG = cfg.logLevel;
+          DB_MAX_CONNECTIONS = toString cfg.pool.maxConnections;
+          DB_ACQUIRE_TIMEOUT_SECS = toString cfg.pool.acquireTimeout;
+        }
+        // optionalAttrs (cfg.mcpAllowedHosts != []) {
+          MCP_ALLOWED_HOSTS = concatMapStringsSep "," (h: h) cfg.mcpAllowedHosts;
+        }
+        // optionalAttrs db.createLocally {DATABASE_URL = localUrl;}
+        // optionalAttrs (!db.createLocally && db.url != null) {DATABASE_URL = db.url;}
+        // cfg.environment;
 
       serviceConfig = {
         Type = "exec";
@@ -595,17 +603,20 @@ in
         Restart = "on-failure";
         RestartSec = 5;
 
-        EnvironmentFile = mkIf (cfg.environmentFile != null) [ cfg.environmentFile ];
+        EnvironmentFile = mkIf (cfg.environmentFile != null) [cfg.environmentFile];
 
         # Migrations and the htmx assets are compiled into the binary, so the
         # service needs nothing writable anywhere.
         # block=yes so the multi-line list values are sorted as whole entries;
         # without it keep-sorted --mode fix drops their closing brackets.
         # keep-sorted start block=yes
-        AmbientCapabilities = optionals (cfg.port < 1024) [ "CAP_NET_BIND_SERVICE" ];
+        AmbientCapabilities = optionals (cfg.port < 1024) ["CAP_NET_BIND_SERVICE"];
         # [ "" ] is the drop-everything form: an empty list renders as no
         # directive at all, which would leave the bounding set untouched.
-        CapabilityBoundingSet = if cfg.port < 1024 then [ "CAP_NET_BIND_SERVICE" ] else [ "" ];
+        CapabilityBoundingSet =
+          if cfg.port < 1024
+          then ["CAP_NET_BIND_SERVICE"]
+          else [""];
         LockPersonality = true;
         MemoryDenyWriteExecute = true;
         NoNewPrivileges = true;
