@@ -17,21 +17,24 @@ no refresh.
 
 ## Requirements
 
-Everything is provided by the Nix devShell:
+Everything is provided by the yggdrasil root Nix devShell (this project no
+longer has a flake of its own):
 
 ```sh
-nix develop     # or `direnv allow`
+direnv allow    # at the repo root, or `nix develop` there
 ```
 
-That brings in the Rust toolchain, `just`, `sqlx-cli`, `psql` (postgresql 18),
+That brings in the Rust toolchain, `just`, `sqlx-cli`, `psql`,
 `podman-compose`, `cargo-watch`, `lefthook` and `cocogitto`, and installs the
-git hooks.
-
-> On an Intel Mac the shell resolves against a separate `nixpkgs-26.05-darwin`
-> input, because nixpkgs 26.11 dropped x86_64-darwin. Everything else, CI
-> included, stays on unstable.
+git hooks (the root ones). All recipes are root recipes prefixed `dashboard-`
+and run from the repo root: `just dashboard-db-up`, `just dashboard-dev`, ...
 
 ## Deploying with Nix
+
+> **Status:** `flake.nix` was folded into the yggdrasil root, so the
+> `packages`, `overlays`, `nixosModules` and `checks` outputs described below
+> are gone for now. `nix/package.nix`, `nix/module.nix` and `nix/tests/` are
+> kept as they were; nothing in the root flake imports them yet.
 
 The flake ships the dashboard as a package and a NixOS module, so another flake
 can run it with a handful of lines:
@@ -97,9 +100,7 @@ them.
 
 ### Testing the module
 
-```sh
-just nix-check          # or: nix flake check
-```
+Until the root flake wires the module in again, these checks are not runnable.
 
 `checks.module-eval` evaluates the module into a full NixOS system and asserts
 on the result — 32 checks covering the connection string, the systemd unit, the
@@ -115,9 +116,9 @@ since the machine this module was written on has none.
 
 ```sh
 cp .env.example .env    # DATABASE_URL, BIND_ADDR, RUST_LOG
-just db-up              # start Postgres 18.4 and wait for it to be healthy
-just mig-run            # apply migrations
-just dev                # run the server, restarting on file changes
+just dashboard-db-up              # start Postgres 18.4 and wait for it to be healthy
+just dashboard-mig-run            # apply migrations
+just dashboard-dev                # run the server, restarting on file changes
 ```
 
 Then open <http://127.0.0.1:3000>.
@@ -155,27 +156,22 @@ Tools exposed: `list_links`, `search_links`, `add_link`, `delete_link`.
 ## Common tasks
 
 ```sh
-just                 # list every recipe
+just --list | grep dashboard   # list every recipe
 
-just db-up           # start Postgres, wait for healthy
-just db-down         # stop it, keep the data
-just db-reset        # destroy data and rebuild from migrations
-just db-shell        # psql shell
-just db-info         # version, size, table definitions
+just dashboard-db-up           # start Postgres, wait for healthy
+just dashboard-db-down         # stop it, keep the data
+just dashboard-db-reset        # destroy data and rebuild from migrations
+just dashboard-db-shell        # psql shell
+just dashboard-db-info         # version, size, table definitions
 
-just mig-run         # apply pending migrations
-just mig-info        # applied vs pending
-just mig-add <name>  # scaffold a new migration
-just mig-revert      # roll back the last one
+just dashboard-mig-run         # apply pending migrations
+just dashboard-mig-info        # applied vs pending
+just dashboard-mig-add <name>  # scaffold a new migration
+just dashboard-mig-revert      # roll back the last one
 
-just dev             # cargo watch -x run
-just clippy-watch    # cargo watch clippy, warnings denied
-just ci              # everything CI runs
-
-just nix-build       # build the package for this system
-just nix-check       # nix flake check: package, module eval, VM test on Linux
-
-just sync-remotes    # push to forgejo, then to the github mirror
+just dashboard-dev             # cargo watch -x run
+just dashboard-clippy-watch    # cargo watch clippy, warnings denied
+just dashboard-ci              # everything CI runs
 ```
 
 ## Configuration
@@ -201,11 +197,11 @@ are cached in `.sqlx/` so CI and fresh checkouts build without a database.
 After changing any `query!` / `query_as!`:
 
 ```sh
-just prepare         # regenerate .sqlx/ (needs the DB up)
-just check-offline   # compile the way CI does — no DB, cache only
+just dashboard-prepare         # regenerate .sqlx/ (needs the DB up)
+just dashboard-check-offline   # compile the way CI does — no DB, cache only
 ```
 
-`just ci` runs `prepare-check`, which fails if `.sqlx/` is stale. Commit the
+`just dashboard-ci` runs `dashboard-prepare-check`, which fails if `.sqlx/` is stale. Commit the
 `.sqlx/` directory alongside the query change.
 
 ## Lints
@@ -214,6 +210,7 @@ Clippy **pedantic is denied**, configured in `Cargo.toml` under `[lints]` so it
 applies identically to `cargo clippy`, rust-analyzer and CI. A few groups are
 explicitly allowed there with a comment explaining why.
 
-Commits go through lefthook: `cargo fmt`, clippy, and `keep-sorted` on
+Commits go through the root lefthook (alejandra, keep-sorted, `just --fmt`, shellcheck, `cog verify`);
+run `just dashboard-ci` for the project's own fmt/clippy/test gate. Formerly the project hooks ran: `cargo fmt`, clippy, and `keep-sorted` on
 pre-commit; tests and `cog check` on pre-push. Commit messages must be
 [conventional commits](https://www.conventionalcommits.org).

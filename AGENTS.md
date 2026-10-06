@@ -16,14 +16,17 @@ All publish to a shared broadcast channel — changes appear live via SSE.
 
 ## Developer commands (use `just`, not Make)
 
+Recipes live in the repo-root `justfile`, prefixed `dashboard-`; run them from
+the repo root (the dev shell is the root one).
+
 ```sh
-just                  # list all recipes
-just dev              # cargo watch -x run (restarts on change)
-just test             # full suite, starts Postgres if needed (db-ready)
-just test-unit        # lib-only tests, no database
-just test-one ui      # single integration test target
-just ci               # fmt-check → clippy → test → sorted-check → prepare-check → cog check
-just check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
+just --list           # all recipes (grep dashboard)
+just dashboard-dev              # cargo watch -x run (restarts on change)
+just dashboard-test             # full suite, starts Postgres if needed (db-ready)
+just dashboard-test-unit        # lib-only tests, no database
+just dashboard-test-one ui      # single integration test target
+just dashboard-ci               # fmt-check → clippy → test → sorted-check → prepare-check
+just dashboard-check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
 ```
 
 ## sqlx: compile-time queries
@@ -32,10 +35,10 @@ just check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
 - Results are cached in `.sqlx/` and **must be committed**.
 - After changing any query:
   ```sh
-  just prepare          # regenerate .sqlx/ (needs DB up)
-  just check-offline    # verify it works without DB
+  just dashboard-prepare          # regenerate .sqlx/ (needs DB up)
+  just dashboard-check-offline    # verify it works without DB
   ```
-- CI runs `just prepare-check` which fails if `.sqlx/` is stale.
+- CI runs `just dashboard-prepare-check` which fails if `.sqlx/` is stale.
 
 ## Testing
 
@@ -43,7 +46,7 @@ just check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
   database, isolated from others.
 - All tests drive the **real router** via `internal_dashboard::build_router`
   (tests/common/mod.rs). Do not reconstruct routing in tests.
-- `just test` depends on `db-ready`, which auto-starts Postgres via podman
+- `just dashboard-test` depends on `dashboard-db-ready`, which auto-starts Postgres via podman
   if unreachable.
 - Postgres binds **host port 5433** (not 5432) to avoid conflicts.
 
@@ -51,12 +54,15 @@ just check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
 
 - **Clippy pedantic is denied** via `Cargo.toml [lints.clippy]`. Applies
   identically to `cargo clippy`, rust-analyzer, and CI.
-- `cargo fmt` and clippy run on **pre-commit** via lefthook.
+- The root lefthook only runs alejandra, keep-sorted, `just --fmt` and shellcheck on commit; run `just dashboard-ci` (fmt-check, clippy, tests) yourself.
 - `keep-sorted` blocks are enforced on pre-commit. Do not manually reorder
   lines between the start and end markers.
-- `cog check` (conventional commits) runs on **pre-push**.
+- `cog verify` (conventional commits) runs on commit-msg via the root lefthook.
 
-## CI (Woodpecker)
+## CI (Woodpecker, decommissioned)
+
+`.woodpecker.yaml` is kept for reference but is inert, and it still refers to
+the removed per-project flake (`nix develop .`, `.#checks`).
 
 - Runs on push and PR. Nix-based with Crane for cached dependency builds.
 - Uses `mold` linker on Linux for faster builds (`.cargo/config.toml`).
@@ -68,16 +74,14 @@ just check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles)
 ## Git workflow
 
 - **Conventional commits** enforced by cocogitto (`cog verify`).
-- `just release` or `just release <version>` — creates an annotated tag,
-  bumps Cargo.toml, regenerates `.sqlx/`, and pushes to forgejo (primary)
-  + github (mirror).
-- `just sync-remotes` — pushes branch and tags to both remotes.
+- Releases (`cog bump`) and the github mirror push are gone with the project
+  `cog.toml` and `justfile`; the root `cog.toml` has no bump hooks.
 
 ## Nix
 
-- `nix develop` or `direnv allow` for the dev shell.
-- `just nix-check` = `nix flake check` (package build, module eval, VM test on Linux).
-- The flake ships as both a package and a NixOS module (`nixosModules.default`).
+- `direnv allow` at the repo root (the project `.envrc` should just be `source_up`).
+- The project flake is gone. `nix/package.nix` and `nix/module.nix` remain but
+  nothing in the root flake builds them yet.
 
 ## Key directories
 
