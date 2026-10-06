@@ -80,8 +80,11 @@ the removed per-project flake (`nix develop .`, `.#checks`).
 ## Nix
 
 - `direnv allow` at the repo root (the project `.envrc` should just be `source_up`).
-- The project flake is gone. `nix/package.nix` and `nix/module.nix` remain but
-  nothing in the root flake builds them yet.
+- The project flake is gone; the root flake wires `nix/` in: package
+  `.#internal-dashboard` (built with the shared toolchain, `rust/toolchain.nix`),
+  `nixosModules.internal-dashboard` (module + overlay),
+  `overlays.internal-dashboard`, and the module tests under
+  `legacyPackages.<system>.internal-dashboard.checks.{module-eval,module-vm}`.
 
 ## Key directories
 

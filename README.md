@@ -31,44 +31,28 @@ and run from the repo root: `just dashboard-db-up`, `just dashboard-dev`, ...
 
 ## Deploying with Nix
 
-> **Status:** `flake.nix` was folded into the yggdrasil root, so the
-> `packages`, `overlays`, `nixosModules` and `checks` outputs described below
-> are gone for now. `nix/package.nix`, `nix/module.nix` and `nix/tests/` are
-> kept as they were; nothing in the root flake imports them yet.
-
-The flake ships the dashboard as a package and a NixOS module, so another flake
-can run it with a handful of lines:
+The yggdrasil root flake ships the dashboard as a package and a NixOS module.
+A host in the monorepo enables it with:
 
 ```nix
 {
-  inputs.internal-dashboard.url = "git+ssh://forgejo@homelab-forgejo…/amadeus/internal-dashboard.git";
-
-  outputs = { nixpkgs, internal-dashboard, ... }: {
-    nixosConfigurations.homelab = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        internal-dashboard.nixosModules.default
-        {
-          services.internal-dashboard = {
-            enable = true;
-            address = "0.0.0.0";
-            openFirewall = true;
-          };
-        }
-      ];
-    };
+  imports = [self.nixosModules.internal-dashboard];
+  services.internal-dashboard = {
+    enable = true;
+    address = "0.0.0.0";
+    openFirewall = true;
   };
 }
 ```
 
-That is the whole deployment. `nixosModules.default` carries the overlay that
-defines `pkgs.internal-dashboard`, and `database.createLocally` — on by default
-— provisions PostgreSQL, a database and a role that owns it, connected over a
-peer-authenticated unix socket. No password exists to leak.
+That is the whole deployment. `nixosModules.internal-dashboard` carries the
+overlay that defines `pkgs.internal-dashboard`, and `database.createLocally` —
+on by default — provisions PostgreSQL, a database and a role that owns it,
+connected over a peer-authenticated unix socket. No password exists to leak.
 
 If you would rather manage the overlay yourself, import
-`nixosModules.internal-dashboard` (the module alone) and add
-`overlays.default` to your own `nixpkgs`. Do that also if you set
+`rust/internal-dashboard/nix/module.nix` (the module alone) and add
+`overlays.internal-dashboard` to your own `nixpkgs`. Do that also if you set
 `nixpkgs.pkgs` in your configuration, which conflicts with a module adding
 overlays.
 
@@ -100,7 +84,9 @@ them.
 
 ### Testing the module
 
-Until the root flake wires the module in again, these checks are not runnable.
+Both live under `legacyPackages.<system>.internal-dashboard.checks` of the root
+flake (not `checks`, so a flake check does not boot VMs):
+`nix build .#legacyPackages.x86_64-linux.internal-dashboard.checks.module-eval`.
 
 `checks.module-eval` evaluates the module into a full NixOS system and asserts
 on the result — 32 checks covering the connection string, the systemd unit, the
