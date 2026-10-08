@@ -17,12 +17,16 @@ no refresh.
 
 ## Requirements
 
-Everything is provided by the yggdrasil root Nix devShell (this project no
-longer has a flake of its own):
+Everything is provided by the yggdrasil root Nix devShell:
 
 ```sh
 direnv allow    # at the repo root, or `nix develop` there
 ```
+
+Outside the monorepo (the GitHub mirror), this directory's own `flake.nix`
+has a smaller dev shell (`nix develop`) plus `packages.default`,
+`overlays.default` and `nixosModules.{default,internal-dashboard}`, with the
+same meaning as the root outputs described below.
 
 That brings in the Rust toolchain, `just`, `sqlx-cli`, `psql`,
 `podman-compose`, `cargo-watch`, `lefthook` and `cocogitto`, and installs the
@@ -87,6 +91,7 @@ them.
 Both live under `legacyPackages.<system>.internal-dashboard.checks` of the root
 flake (not `checks`, so a flake check does not boot VMs):
 `nix build .#legacyPackages.x86_64-linux.internal-dashboard.checks.module-eval`.
+In the standalone flake they are plain `checks` (`nix build .#checks.x86_64-linux.module-eval`).
 
 `checks.module-eval` evaluates the module into a full NixOS system and asserts
 on the result — 32 checks covering the connection string, the systemd unit, the
