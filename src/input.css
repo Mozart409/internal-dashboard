@@ -222,6 +222,12 @@ button:hover, .button:hover { transform: translateY(-1px); }
 .filter-form p { color: var(--ink-soft); font-family: var(--mono); text-transform: uppercase; letter-spacing: .08em; font-size: 10px; }
 .filter-form a { margin-left: auto; color: var(--accent-strong); font-size: 12px; font-weight: 700; }
 
+.sort-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 16px; }
+.sort-label { margin-right: 4px; color: var(--ink-soft); font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+.sort-toggle button[type="submit"] { min-height: 32px; padding: 6px 12px; background: transparent; border-color: var(--line); color: var(--ink); }
+.sort-toggle button[type="submit"]:hover { background: transparent; border-color: var(--accent); color: var(--accent); }
+.sort-toggle button[aria-pressed="true"], .sort-toggle button[aria-pressed="true"]:hover { background: var(--accent); border-color: var(--accent); color: var(--paper-deep); }
+
 #link-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .link-row { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 16px; background: var(--paper-raised); border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 2px 0 var(--shadow); transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease; min-width: 0; }
 .link-row:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 4px 8px var(--shadow); }

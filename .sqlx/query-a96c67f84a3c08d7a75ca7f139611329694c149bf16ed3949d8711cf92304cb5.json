@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        insert into links (url, title, description, tags)\n        values ($1, $2, $3, $4)\n        returning id, url, title, description, tags, created_at, updated_at\n        ",
+  "query": "\n        select id, url, title, description, tags, clicks, created_at, updated_at\n        from links\n        where title ilike $1 or url ilike $1 or coalesce(description, '') ilike $1\n        order by\n            case when $3 = 'title' then lower(title) end asc,\n            case when $3 = 'clicks' then clicks end desc,\n            created_at desc,\n            id\n        limit $2\n        ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "clicks",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "links",
+            "name": "clicks"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -84,9 +95,8 @@
     "parameters": {
       "Left": [
         "Text",
-        "Text",
-        "Text",
-        "TextArray"
+        "Int8",
+        "Text"
       ]
     },
     "nullable": [
@@ -96,8 +106,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "6caac7a5714a3e2330052fb6aca57b8a1fcd86059196b48b7d764fb6f40de004"
+  "hash": "a96c67f84a3c08d7a75ca7f139611329694c149bf16ed3949d8711cf92304cb5"
 }

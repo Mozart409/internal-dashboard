@@ -3,6 +3,7 @@ use std::convert::Infallible;
 use axum::{
     Router,
     extract::State,
+    http::HeaderMap,
     response::sse::{Event, KeepAlive, Sse},
     routing::get,
 };
@@ -16,15 +17,19 @@ use crate::events::AppState;
 /// On each broadcast event, re-queries the full link list and renders it as HTML,
 /// emitting an SSE event with the event name (created/updated/deleted) and rendered markup.
 /// Broadcast receive errors (lagged subscribers) are gracefully skipped.
+/// The list keeps the sort order the client picked, read from its sort cookie
+/// at connect time; changing the sort reloads the page and so reconnects.
 ///
 /// # Errors
 ///
 /// Never produces an error to the client; all failures are silently skipped.
 pub async fn events(
     State(state): State<AppState>,
+    headers: HeaderMap,
 ) -> Sse<impl futures::stream::Stream<Item = Result<Event, Infallible>>> {
     let pool = state.pool.clone();
     let rx = state.events.subscribe();
+    let sort = crate::ui::sort_cookie(&headers).unwrap_or_default();
 
     // `filter_map` wants a future yielding Option, not an Option of a future,
     // so the async block is unconditional and the skips happen inside it via `?`.
@@ -34,7 +39,7 @@ pub async fn events(
             // A lagged receiver just misses a frame; the next event resyncs the
             // whole list anyway, so dropping it is safe.
             let event = result.ok()?;
-            let links = crate::db::list_links(&pool, None).await.ok()?;
+            let links = crate::db::list_links(&pool, None, sort).await.ok()?;
 
             // Strip newlines to satisfy the SSE line protocol: data frames must
             // not contain literal newlines without per-line framing.

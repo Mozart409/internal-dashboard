@@ -3,8 +3,8 @@
 use axum::{
     Form, Router,
     extract::{Path, Query, State},
-    http::header,
-    response::IntoResponse,
+    http::{HeaderMap, StatusCode, header},
+    response::{AppendHeaders, IntoResponse},
 };
 use chrono::{DateTime, Utc};
 use maud::{Markup, html};
@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::events::{AppState, LinkEvent};
-use crate::models::{Link, NewLink, UpdateLink};
+use crate::models::{Link, LinkSort, NewLink, UpdateLink};
 
 /// Vendored htmx assets, embedded in the binary so the dashboard works with no
 /// network access and without needing `static/` next to the executable.
@@ -66,6 +66,23 @@ async fn favicon() -> impl IntoResponse {
         ],
         FAVICON_SVG,
     )
+}
+
+/// Cookie remembering the sort the UI toggle last picked. The list fragments
+/// returned by mutations and pushed over SSE read it too, so a live update
+/// keeps the order the viewer chose.
+const SORT_COOKIE: &str = "link-sort";
+
+/// The sort stored in the request's sort cookie, if any (and if valid).
+#[must_use]
+pub fn sort_cookie(headers: &HeaderMap) -> Option<LinkSort> {
+    headers
+        .get_all(header::COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|value| value.split(';'))
+        .find_map(|pair| pair.trim().strip_prefix(SORT_COOKIE)?.strip_prefix('='))
+        .and_then(LinkSort::parse)
 }
 
 /// Full HTML document layout.
@@ -125,7 +142,11 @@ pub fn render_link_list(links: &[Link]) -> Markup {
             @for link in links {
                 div class="link-row" {
                     div class="link-title" {
-                        a href=(link.url) target="_blank" rel="noopener noreferrer" {
+                        // The href stays the real URL (hover, copy, middle-click
+                        // all behave); the beacon counts the click on the side.
+                        a href=(link.url) target="_blank" rel="noopener noreferrer"
+                            onclick={"navigator.sendBeacon('/links/" (link.id) "/click')"}
+                            onauxclick={"if (event.button === 1) navigator.sendBeacon('/links/" (link.id) "/click')"} {
                             (link.title)
                         }
                     }
@@ -168,12 +189,27 @@ pub fn render_link_list(links: &[Link]) -> Markup {
 #[allow(clippy::too_many_lines)]
 pub async fn index(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(params): Query<IndexParams>,
 ) -> Result<impl IntoResponse, AppError> {
+    // An explicit `?sort=` wins and is remembered; otherwise the cookie decides.
+    // Unknown values are ignored rather than rejected.
+    let picked = params.sort.as_deref().and_then(LinkSort::parse);
+    let sort = picked.or_else(|| sort_cookie(&headers)).unwrap_or_default();
+    let set_cookie = picked.map(|sort| {
+        (
+            header::SET_COOKIE,
+            format!(
+                "{SORT_COOKIE}={}; Path=/; Max-Age=31536000; SameSite=Lax",
+                sort.as_str()
+            ),
+        )
+    });
+
     let links = if let Some(q) = &params.q {
-        crate::db::search_links(&state.pool, q, 100).await?
+        crate::db::search_links(&state.pool, q, 100, sort).await?
     } else {
-        crate::db::list_links(&state.pool, params.tag.as_deref()).await?
+        crate::db::list_links(&state.pool, params.tag.as_deref(), sort).await?
     };
 
     let form_html = html! {
@@ -218,6 +254,25 @@ pub async fn index(
         html! {}
     };
 
+    // A plain GET form, so the browser encodes the tag/search it carries along.
+    let sort_html = html! {
+        form class="sort-toggle" method="get" action="/" role="group" aria-label="Sort links" {
+            @if let Some(tag) = &params.tag {
+                input type="hidden" name="tag" value=(tag);
+            }
+            @if let Some(q) = &params.q {
+                input type="hidden" name="q" value=(q);
+            }
+            span class="sort-label" { "Sort" }
+            @for option in LinkSort::ALL {
+                button type="submit" name="sort" value=(option.as_str())
+                        aria-pressed=(if option == sort { "true" } else { "false" }) {
+                    (option.label())
+                }
+            }
+        }
+    };
+
     let body = html! {
         div class="shell" {
             main class="main" {
@@ -252,6 +307,7 @@ pub async fn index(
                     }
                     section class="library-panel" {
                         (filter_html)
+                        (sort_html)
                         div hx-ext="sse" sse-connect="/events" {
                             (render_link_list(&links))
                         }
@@ -261,13 +317,17 @@ pub async fn index(
         }
     };
 
-    Ok(layout("Links Dashboard", body))
+    Ok((
+        AppendHeaders(set_cookie),
+        layout("Links Dashboard", body),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
 pub struct IndexParams {
     tag: Option<String>,
     q: Option<String>,
+    sort: Option<String>,
 }
 
 /// GET /links/{id}/edit — Display the edit form for a link.
@@ -327,6 +387,7 @@ pub async fn edit_page(
 /// Returns error if validation fails or database operation fails.
 pub async fn create_link(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Form(mut new_link): Form<NewLink>,
 ) -> Result<Markup, AppError> {
     new_link.validate()?;
@@ -334,7 +395,8 @@ pub async fn create_link(
     let link = crate::db::create_link(&state.pool, &new_link).await?;
     state.publish(LinkEvent::Created(link));
 
-    let links = crate::db::list_links(&state.pool, None).await?;
+    let sort = sort_cookie(&headers).unwrap_or_default();
+    let links = crate::db::list_links(&state.pool, None, sort).await?;
     Ok(render_link_list(&links))
 }
 
@@ -344,6 +406,7 @@ pub async fn create_link(
 /// Returns error if the link is not found or database operation fails.
 pub async fn update_link(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
     Form(update): Form<UpdateLink>,
 ) -> Result<Markup, AppError> {
@@ -353,7 +416,8 @@ pub async fn update_link(
 
     state.publish(LinkEvent::Updated(link));
 
-    let links = crate::db::list_links(&state.pool, None).await?;
+    let sort = sort_cookie(&headers).unwrap_or_default();
+    let links = crate::db::list_links(&state.pool, None, sort).await?;
     Ok(render_link_list(&links))
 }
 
@@ -363,6 +427,7 @@ pub async fn update_link(
 /// Returns error if the link is not found or database operation fails.
 pub async fn delete_link_handler(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(id): Path<Uuid>,
 ) -> Result<Markup, AppError> {
     let deleted = crate::db::delete_link(&state.pool, id).await?;
@@ -373,14 +438,35 @@ pub async fn delete_link_handler(
 
     state.publish(LinkEvent::Deleted(id));
 
-    let links = crate::db::list_links(&state.pool, None).await?;
+    let sort = sort_cookie(&headers).unwrap_or_default();
+    let links = crate::db::list_links(&state.pool, None, sort).await?;
     Ok(render_link_list(&links))
+}
+
+/// POST /links/{id}/click — Count a click; sent as a beacon by the link anchor.
+///
+/// Deliberately publishes no event: a click is not an edit, and re-rendering
+/// every open list on each click would reorder it under the viewer.
+///
+/// # Errors
+/// Returns [`AppError::NotFound`] if no link has that id, or
+/// [`AppError::Database`] if the update fails.
+pub async fn record_click(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    if crate::db::record_click(&state.pool, id).await? {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::NotFound)
+    }
 }
 
 /// Build the UI router with all HTML routes.
 ///
 /// # Returns
-/// An Axum router configured with GET /, GET /links/{id}/edit, POST /links, PUT /links/{id}, and DELETE /links/{id}.
+/// An Axum router configured with GET /, GET /links/{id}/edit, POST /links, PUT /links/{id},
+/// DELETE /links/{id} and POST /links/{id}/click.
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/static/htmx.min.js", axum::routing::get(htmx_js))
@@ -392,6 +478,7 @@ pub fn router() -> Router<AppState> {
         .route("/links", axum::routing::post(create_link))
         .route("/links/{id}", axum::routing::put(update_link))
         .route("/links/{id}", axum::routing::delete(delete_link_handler))
+        .route("/links/{id}/click", axum::routing::post(record_click))
 }
 
 /// Format a UTC datetime for display.

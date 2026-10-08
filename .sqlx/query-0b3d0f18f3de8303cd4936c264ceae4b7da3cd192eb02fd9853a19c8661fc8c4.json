@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, url, title, description, tags, created_at, updated_at\n        from links\n        where $1::text is null or $1 = any(tags)\n        order by created_at desc\n        ",
+  "query": "\n        select id, url, title, description, tags, clicks, created_at, updated_at\n        from links\n        where $1::text is null or $1 = any(tags)\n        order by\n            case when $2 = 'title' then lower(title) end asc,\n            case when $2 = 'clicks' then clicks end desc,\n            created_at desc,\n            id\n        ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "clicks",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "links",
+            "name": "clicks"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -83,6 +94,7 @@
     ],
     "parameters": {
       "Left": [
+        "Text",
         "Text"
       ]
     },
@@ -93,8 +105,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "97d53ae77324daed18ed32cfb700af3f71ea555900908fa96ecdc1e82075f87f"
+  "hash": "0b3d0f18f3de8303cd4936c264ceae4b7da3cd192eb02fd9853a19c8661fc8c4"
 }

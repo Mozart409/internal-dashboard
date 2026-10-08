@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::events::{AppState, LinkEvent};
-use crate::models::{Link, NewLink, UpdateLink};
+use crate::models::{Link, LinkSort, NewLink, UpdateLink};
 
 /// Query parameters for list endpoints.
 #[derive(Debug, Deserialize, ToSchema, utoipa::IntoParams)]
@@ -19,6 +19,8 @@ pub struct ListQuery {
     pub tag: Option<String>,
     /// Search query for substring match.
     pub q: Option<String>,
+    /// Result order: `newest` (default), `title` or `clicks`.
+    pub sort: Option<LinkSort>,
 }
 
 /// Get all links with optional filtering by tag or search query.
@@ -40,10 +42,11 @@ async fn list_links(
     State(state): State<AppState>,
     Query(params): Query<ListQuery>,
 ) -> Result<Json<Vec<Link>>, AppError> {
+    let sort = params.sort.unwrap_or_default();
     let links = if let Some(q) = params.q {
-        crate::db::search_links(&state.pool, &q, 100).await?
+        crate::db::search_links(&state.pool, &q, 100, sort).await?
     } else {
-        crate::db::list_links(&state.pool, params.tag.as_deref()).await?
+        crate::db::list_links(&state.pool, params.tag.as_deref(), sort).await?
     };
 
     Ok(Json(links))

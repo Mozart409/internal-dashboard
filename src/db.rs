@@ -5,22 +5,31 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::{Link, NewLink, UpdateLink};
+use crate::models::{Link, LinkSort, NewLink, UpdateLink};
 
-/// All links, newest first. `tag` filters to links carrying that tag.
+/// All links in `sort` order. `tag` filters to links carrying that tag.
 ///
 /// # Errors
 /// Returns [`AppError::Database`] if the query fails.
-pub async fn list_links(pool: &PgPool, tag: Option<&str>) -> Result<Vec<Link>, AppError> {
+pub async fn list_links(
+    pool: &PgPool,
+    tag: Option<&str>,
+    sort: LinkSort,
+) -> Result<Vec<Link>, AppError> {
     let links = sqlx::query_as!(
         Link,
         r#"
-        select id, url, title, description, tags, created_at, updated_at
+        select id, url, title, description, tags, clicks, created_at, updated_at
         from links
         where $1::text is null or $1 = any(tags)
-        order by created_at desc
+        order by
+            case when $2 = 'title' then lower(title) end asc,
+            case when $2 = 'clicks' then clicks end desc,
+            created_at desc,
+            id
         "#,
-        tag
+        tag,
+        sort.as_str()
     )
     .fetch_all(pool)
     .await?;
@@ -36,7 +45,7 @@ pub async fn get_link(pool: &PgPool, id: Uuid) -> Result<Option<Link>, AppError>
     let link = sqlx::query_as!(
         Link,
         r#"
-        select id, url, title, description, tags, created_at, updated_at
+        select id, url, title, description, tags, clicks, created_at, updated_at
         from links
         where id = $1
         "#,
@@ -48,24 +57,35 @@ pub async fn get_link(pool: &PgPool, id: Uuid) -> Result<Option<Link>, AppError>
     Ok(link)
 }
 
-/// Case-insensitive substring match across title, url and description.
+/// Case-insensitive substring match across title, url and description, in
+/// `sort` order.
 ///
 /// # Errors
 /// Returns [`AppError::Database`] if the query fails.
-pub async fn search_links(pool: &PgPool, q: &str, limit: i64) -> Result<Vec<Link>, AppError> {
+pub async fn search_links(
+    pool: &PgPool,
+    q: &str,
+    limit: i64,
+    sort: LinkSort,
+) -> Result<Vec<Link>, AppError> {
     let pattern = format!("%{}%", q.trim());
 
     let links = sqlx::query_as!(
         Link,
         r#"
-        select id, url, title, description, tags, created_at, updated_at
+        select id, url, title, description, tags, clicks, created_at, updated_at
         from links
         where title ilike $1 or url ilike $1 or coalesce(description, '') ilike $1
-        order by created_at desc
+        order by
+            case when $3 = 'title' then lower(title) end asc,
+            case when $3 = 'clicks' then clicks end desc,
+            created_at desc,
+            id
         limit $2
         "#,
         pattern,
-        limit.clamp(1, 500)
+        limit.clamp(1, 500),
+        sort.as_str()
     )
     .fetch_all(pool)
     .await?;
@@ -83,7 +103,7 @@ pub async fn create_link(pool: &PgPool, new: &NewLink) -> Result<Link, AppError>
         r#"
         insert into links (url, title, description, tags)
         values ($1, $2, $3, $4)
-        returning id, url, title, description, tags, created_at, updated_at
+        returning id, url, title, description, tags, clicks, created_at, updated_at
         "#,
         new.url,
         new.title,
@@ -119,7 +139,7 @@ pub async fn update_link(
             tags        = coalesce($5, tags),
             updated_at  = now()
         where id = $1
-        returning id, url, title, description, tags, created_at, updated_at
+        returning id, url, title, description, tags, clicks, created_at, updated_at
         "#,
         id,
         up.url.as_deref(),
@@ -139,6 +159,19 @@ pub async fn update_link(
 /// Returns [`AppError::Database`] if the delete fails.
 pub async fn delete_link(pool: &PgPool, id: Uuid) -> Result<bool, AppError> {
     let result = sqlx::query!("delete from links where id = $1", id)
+        .execute(pool)
+        .await?;
+
+    Ok(result.rows_affected() > 0)
+}
+
+/// Count one click on a link. Returns whether the link exists. Deliberately
+/// leaves `updated_at` alone: opening a link is not editing it.
+///
+/// # Errors
+/// Returns [`AppError::Database`] if the update fails.
+pub async fn record_click(pool: &PgPool, id: Uuid) -> Result<bool, AppError> {
+    let result = sqlx::query!("update links set clicks = clicks + 1 where id = $1", id)
         .execute(pool)
         .await?;
 

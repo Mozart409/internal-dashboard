@@ -15,8 +15,65 @@ pub struct Link {
     pub description: Option<String>,
     /// Free-form tags used for filtering.
     pub tags: Vec<String>,
+    /// How often the link has been opened from the UI.
+    pub clicks: i64,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Order of a link listing. Every surface accepts it; `newest` is the default.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    Default,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    rmcp::schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkSort {
+    /// Most recently created first.
+    #[default]
+    Newest,
+    /// Alphabetical by title, case-insensitive.
+    Title,
+    /// Most opened first, newest breaking ties.
+    Clicks,
+}
+
+impl LinkSort {
+    /// Every variant, in the order the UI toggle shows them.
+    pub const ALL: [LinkSort; 3] = [LinkSort::Newest, LinkSort::Title, LinkSort::Clicks];
+
+    /// The wire name, as used in query strings, the cookie and SQL.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            LinkSort::Newest => "newest",
+            LinkSort::Title => "title",
+            LinkSort::Clicks => "clicks",
+        }
+    }
+
+    /// Inverse of [`LinkSort::as_str`].
+    #[must_use]
+    pub fn parse(s: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|sort| sort.as_str() == s)
+    }
+
+    /// Label for the UI toggle.
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            LinkSort::Newest => "Newest",
+            LinkSort::Title => "A–Z",
+            LinkSort::Clicks => "Most clicked",
+        }
+    }
 }
 
 /// Payload for creating a link.
@@ -158,6 +215,20 @@ mod tests {
 
         let mut blank_title = new_link(r#"{"url":"https://a.dev","title":"   "}"#);
         assert!(blank_title.validate().is_err());
+    }
+
+    #[test]
+    fn sort_parse_round_trips_and_rejects_unknown() {
+        for sort in LinkSort::ALL {
+            assert_eq!(LinkSort::parse(sort.as_str()), Some(sort));
+        }
+        assert_eq!(LinkSort::parse("oldest"), None);
+    }
+
+    #[test]
+    fn sort_deserializes_from_its_wire_name() {
+        let sort: LinkSort = serde_json::from_str(r#""clicks""#).expect("valid");
+        assert_eq!(sort, LinkSort::Clicks);
     }
 
     #[test]

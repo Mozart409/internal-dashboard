@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "update links set clicks = clicks + 1 where id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9a4ced4eab1bf177a1fe256401cce9d8b9b0101d18ab8ea5e1e3113b0187bfee"
+}

@@ -8,7 +8,7 @@ mod common;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use internal_dashboard::db;
-use internal_dashboard::models::{Link, NewLink, UpdateLink};
+use internal_dashboard::models::{Link, LinkSort, NewLink, UpdateLink};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -196,7 +196,7 @@ async fn create_link_does_not_validate_its_input(pool: PgPool) {
 
 #[sqlx::test]
 async fn list_links_returns_empty_on_a_fresh_database(pool: PgPool) {
-    let links = db::list_links(&pool, None)
+    let links = db::list_links(&pool, None, LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -209,7 +209,7 @@ async fn list_links_returns_every_link_when_tag_is_none(pool: PgPool) {
     create(&pool, &with_tags("https://b.dev", "b", &["ops"])).await;
     create(&pool, &new_link("https://c.dev", "c")).await;
 
-    let links = db::list_links(&pool, None)
+    let links = db::list_links(&pool, None, LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -228,7 +228,7 @@ async fn list_links_filters_to_links_carrying_the_tag(pool: PgPool) {
     create(&pool, &with_tags("https://c.dev", "c", &["rust"])).await;
     create(&pool, &new_link("https://d.dev", "d")).await;
 
-    let links = db::list_links(&pool, Some("rust"))
+    let links = db::list_links(&pool, Some("rust"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -245,7 +245,7 @@ async fn list_links_filters_to_links_carrying_the_tag(pool: PgPool) {
 async fn list_links_tag_filter_is_an_exact_match_not_a_substring(pool: PgPool) {
     create(&pool, &with_tags("https://a.dev", "a", &["rustacean"])).await;
 
-    let links = db::list_links(&pool, Some("rust"))
+    let links = db::list_links(&pool, Some("rust"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -259,7 +259,7 @@ async fn list_links_tag_filter_is_an_exact_match_not_a_substring(pool: PgPool) {
 async fn list_links_is_case_sensitive_on_tags(pool: PgPool) {
     create(&pool, &with_tags("https://a.dev", "a", &["rust"])).await;
 
-    let links = db::list_links(&pool, Some("RUST"))
+    let links = db::list_links(&pool, Some("RUST"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -274,7 +274,7 @@ async fn list_links_returns_empty_for_a_tag_nobody_has(pool: PgPool) {
     create(&pool, &with_tags("https://a.dev", "a", &["rust"])).await;
     create(&pool, &with_tags("https://b.dev", "b", &["ops"])).await;
 
-    let links = db::list_links(&pool, Some("nobody-has-this"))
+    let links = db::list_links(&pool, Some("nobody-has-this"), LinkSort::Newest)
         .await
         .expect("an unmatched tag is not an error");
 
@@ -297,7 +297,7 @@ async fn list_links_orders_by_created_at_descending(pool: PgPool) {
     set_created_at(&pool, newest.id, now - TimeDelta::hours(1)).await;
     set_created_at(&pool, middle.id, now - TimeDelta::hours(2)).await;
 
-    let links = db::list_links(&pool, None)
+    let links = db::list_links(&pool, None, LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -317,7 +317,7 @@ async fn list_links_returns_sequential_inserts_newest_first(pool: PgPool) {
         tokio::time::sleep(std::time::Duration::from_millis(3)).await;
     }
 
-    let links = db::list_links(&pool, None)
+    let links = db::list_links(&pool, None, LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -338,7 +338,7 @@ async fn list_links_orders_by_created_at_descending_when_filtering_by_tag(pool: 
     set_created_at(&pool, old.id, now - TimeDelta::hours(2)).await;
     set_created_at(&pool, new.id, now - TimeDelta::hours(1)).await;
 
-    let links = db::list_links(&pool, Some("rust"))
+    let links = db::list_links(&pool, Some("rust"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -360,7 +360,7 @@ async fn search_links_matches_on_title(pool: PgPool) {
     .await;
     create(&pool, &new_link("https://example.com/y", "Something else")).await;
 
-    let found = db::search_links(&pool, "quarterly", 50)
+    let found = db::search_links(&pool, "quarterly", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -380,7 +380,7 @@ async fn search_links_matches_on_url(pool: PgPool) {
     .await;
     create(&pool, &new_link("https://example.com/y", "Something else")).await;
 
-    let found = db::search_links(&pool, "grafana", 50)
+    let found = db::search_links(&pool, "grafana", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -400,7 +400,7 @@ async fn search_links_matches_on_description(pool: PgPool) {
     .await;
     create(&pool, &new_link("https://b.dev", "Something else")).await;
 
-    let found = db::search_links(&pool, "ingester", 50)
+    let found = db::search_links(&pool, "ingester", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -417,7 +417,7 @@ async fn search_links_tolerates_a_null_description(pool: PgPool) {
     // dropping the row out of an otherwise matching search.
     create(&pool, &new_link("https://a.dev", "no description here")).await;
 
-    let found = db::search_links(&pool, "description", 50)
+    let found = db::search_links(&pool, "description", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -437,7 +437,7 @@ async fn search_links_is_case_insensitive(pool: PgPool) {
     .await;
 
     for query in ["mixed", "MIXED", "MiXeD", "example.com", "EXAMPLE.COM"] {
-        let found = db::search_links(&pool, query, 50)
+        let found = db::search_links(&pool, query, 50, LinkSort::Newest)
             .await
             .expect("search_links should not error");
         assert_eq!(
@@ -452,7 +452,7 @@ async fn search_links_is_case_insensitive(pool: PgPool) {
 async fn search_links_matches_a_substring_anywhere(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "prometheus alerting")).await;
 
-    let found = db::search_links(&pool, "methe", 50)
+    let found = db::search_links(&pool, "methe", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -467,7 +467,7 @@ async fn search_links_matches_a_substring_anywhere(pool: PgPool) {
 async fn search_links_trims_the_query(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "prometheus")).await;
 
-    let found = db::search_links(&pool, "   prometheus   ", 50)
+    let found = db::search_links(&pool, "   prometheus   ", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -483,7 +483,7 @@ async fn search_links_returns_empty_when_nothing_matches(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "alpha")).await;
     create(&pool, &new_link("https://b.dev", "beta")).await;
 
-    let found = db::search_links(&pool, "no-such-thing-anywhere", 50)
+    let found = db::search_links(&pool, "no-such-thing-anywhere", 50, LinkSort::Newest)
         .await
         .expect("a query with no hits is not an error");
 
@@ -502,7 +502,7 @@ async fn search_links_orders_by_created_at_descending(pool: PgPool) {
     set_created_at(&pool, old.id, now - TimeDelta::hours(2)).await;
     set_created_at(&pool, new.id, now - TimeDelta::hours(1)).await;
 
-    let found = db::search_links(&pool, "match", 50)
+    let found = db::search_links(&pool, "match", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -519,7 +519,7 @@ async fn search_links_respects_the_limit(pool: PgPool) {
         create(&pool, &new_link("https://a.dev", &format!("match {i}"))).await;
     }
 
-    let found = db::search_links(&pool, "match", 2)
+    let found = db::search_links(&pool, "match", 2, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -530,7 +530,7 @@ async fn search_links_respects_the_limit(pool: PgPool) {
 async fn search_links_returns_fewer_rows_than_the_limit_allows(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "match")).await;
 
-    let found = db::search_links(&pool, "match", 100)
+    let found = db::search_links(&pool, "match", 100, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -543,7 +543,7 @@ async fn search_links_clamps_a_zero_limit_up_to_one(pool: PgPool) {
         create(&pool, &new_link("https://a.dev", &format!("match {i}"))).await;
     }
 
-    let found = db::search_links(&pool, "match", 0)
+    let found = db::search_links(&pool, "match", 0, LinkSort::Newest)
         .await
         .expect("limit 0 must not error — it is clamped, not rejected");
 
@@ -556,7 +556,7 @@ async fn search_links_clamps_a_negative_limit_up_to_one(pool: PgPool) {
         create(&pool, &new_link("https://a.dev", &format!("match {i}"))).await;
     }
 
-    let found = db::search_links(&pool, "match", -9999)
+    let found = db::search_links(&pool, "match", -9999, LinkSort::Newest)
         .await
         .expect("a negative limit must not reach Postgres, which would reject it");
 
@@ -575,7 +575,7 @@ async fn search_links_clamps_a_huge_limit_down_to_five_hundred(pool: PgPool) {
     .await
     .expect("bulk insert should succeed");
 
-    let found = db::search_links(&pool, "bulk", 9999)
+    let found = db::search_links(&pool, "bulk", 9999, LinkSort::Newest)
         .await
         .expect("an oversized limit must not error — it is clamped");
 
@@ -593,7 +593,7 @@ async fn search_links_treats_an_empty_query_as_match_everything(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "a")).await;
     create(&pool, &new_link("https://b.dev", "b")).await;
 
-    let found = db::search_links(&pool, "", 50)
+    let found = db::search_links(&pool, "", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
 
@@ -607,7 +607,7 @@ async fn search_links_does_not_escape_like_metacharacters(pool: PgPool) {
     create(&pool, &new_link("https://a.dev", "alpha")).await;
     create(&pool, &new_link("https://b.dev", "beta")).await;
 
-    let wildcard = db::search_links(&pool, "%", 50)
+    let wildcard = db::search_links(&pool, "%", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
     assert_eq!(
@@ -616,7 +616,7 @@ async fn search_links_does_not_escape_like_metacharacters(pool: PgPool) {
         "a bare % is treated as a wildcard, matching everything"
     );
 
-    let underscore = db::search_links(&pool, "alph_", 50)
+    let underscore = db::search_links(&pool, "alph_", 50, LinkSort::Newest)
         .await
         .expect("search_links should not error");
     assert_eq!(
@@ -1092,7 +1092,7 @@ async fn delete_link_removes_only_the_targeted_row(pool: PgPool) {
         "precondition: the targeted row was deleted"
     );
 
-    let remaining = db::list_links(&pool, None)
+    let remaining = db::list_links(&pool, None, LinkSort::Newest)
         .await
         .expect("list_links should not error");
     assert_eq!(
@@ -1173,10 +1173,10 @@ async fn tags_round_trip_with_array_literal_metacharacters(pool: PgPool) {
 async fn a_tag_containing_a_comma_is_filterable_as_one_tag(pool: PgPool) {
     create(&pool, &with_tags("https://a.dev", "a", &["a,b"])).await;
 
-    let matched = db::list_links(&pool, Some("a,b"))
+    let matched = db::list_links(&pool, Some("a,b"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
-    let unmatched = db::list_links(&pool, Some("a"))
+    let unmatched = db::list_links(&pool, Some("a"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
 
@@ -1198,7 +1198,7 @@ async fn tags_round_trip_unicode(pool: PgPool) {
 
     assert_eq!(created.tags, tags, "unicode tags should round trip intact");
 
-    let matched = db::list_links(&pool, Some("日本語"))
+    let matched = db::list_links(&pool, Some("日本語"), LinkSort::Newest)
         .await
         .expect("list_links should not error");
     assert_eq!(matched.len(), 1, "a unicode tag should be filterable");

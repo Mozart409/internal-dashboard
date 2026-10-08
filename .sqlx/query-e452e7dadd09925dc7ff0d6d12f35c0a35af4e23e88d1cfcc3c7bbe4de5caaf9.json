@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        select id, url, title, description, tags, created_at, updated_at\n        from links\n        where id = $1\n        ",
+  "query": "\n        select id, url, title, description, tags, clicks, created_at, updated_at\n        from links\n        where id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -60,6 +60,17 @@
       },
       {
         "ordinal": 5,
+        "name": "clicks",
+        "type_info": "Int8",
+        "origin": {
+          "Table": {
+            "table": "links",
+            "name": "clicks"
+          }
+        }
+      },
+      {
+        "ordinal": 6,
         "name": "created_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -70,7 +81,7 @@
         }
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "updated_at",
         "type_info": "Timestamptz",
         "origin": {
@@ -93,8 +104,9 @@
       true,
       false,
       false,
+      false,
       false
     ]
   },
-  "hash": "76ec5c43bc7dc7f0bacbcd4a1d20c890dbe5d1c99b0c8df0685b7a23822de27a"
+  "hash": "e452e7dadd09925dc7ff0d6d12f35c0a35af4e23e88d1cfcc3c7bbe4de5caaf9"
 }

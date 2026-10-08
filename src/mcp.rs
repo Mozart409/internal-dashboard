@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::db;
 use crate::events::AppState;
-use crate::models::{NewLink, UpdateLink};
+use crate::models::{LinkSort, NewLink, UpdateLink};
 
 /// Parameters for searching links
 #[derive(Debug, Deserialize, rmcp::schemars::JsonSchema, Serialize)]
@@ -23,6 +23,9 @@ pub struct SearchParams {
     /// Maximum number of results to return (default 20, max 500)
     #[serde(default)]
     pub limit: Option<i64>,
+    /// Result order: newest (default), title (A–Z) or clicks (most clicked)
+    #[serde(default)]
+    pub sort: Option<LinkSort>,
 }
 
 /// Parameters for listing links
@@ -30,6 +33,9 @@ pub struct SearchParams {
 pub struct ListParams {
     /// Optional tag to filter results
     pub tag: Option<String>,
+    /// Result order: newest (default), title (A–Z) or clicks (most clicked)
+    #[serde(default)]
+    pub sort: Option<LinkSort>,
 }
 
 /// Parameters for adding a new link
@@ -87,22 +93,24 @@ impl LinksServer {
 #[tool_router]
 impl LinksServer {
     /// List all links, optionally filtered by tag.
-    /// Newest links are returned first.
+    /// Newest links are returned first unless `sort` says otherwise.
     #[tool(description = "List all links, optionally filtered by tag")]
     async fn list_links(&self, params: Parameters<ListParams>) -> Result<String, String> {
         let tag = params.0.tag.as_deref();
-        match db::list_links(&self.state.pool, tag).await {
+        let sort = params.0.sort.unwrap_or_default();
+        match db::list_links(&self.state.pool, tag, sort).await {
             Ok(links) => Ok(serde_json::to_string(&links).unwrap_or_default()),
             Err(e) => Err(format!("Failed to list links: {e}")),
         }
     }
 
     /// Search for links by full-text query across title, URL, and description.
-    /// Results are newest first.
+    /// Results are newest first unless `sort` says otherwise.
     #[tool(description = "Search for links by query (searches title, URL, and description)")]
     async fn search_links(&self, params: Parameters<SearchParams>) -> Result<String, String> {
         let limit = params.0.limit.unwrap_or(20).clamp(1, 500);
-        match db::search_links(&self.state.pool, &params.0.query, limit).await {
+        let sort = params.0.sort.unwrap_or_default();
+        match db::search_links(&self.state.pool, &params.0.query, limit, sort).await {
             Ok(links) => Ok(serde_json::to_string(&links).unwrap_or_default()),
             Err(e) => Err(format!("Failed to search links: {e}")),
         }
