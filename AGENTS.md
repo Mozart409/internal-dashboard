@@ -48,7 +48,7 @@ just dashboard-check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles
   (tests/common/mod.rs). Do not reconstruct routing in tests.
 - `just dashboard-test` depends on `dashboard-db-ready`, which auto-starts Postgres via podman
   if unreachable.
-- Postgres binds **host port 5433** (not 5432) to avoid conflicts.
+- Postgres binds **host port 5434** (not 5432, nor 5433: that is hofvarpnir's `postgres-test`).
 
 ## Linting and formatting
 
@@ -68,7 +68,7 @@ the removed per-project flake (`nix develop .`, `.#checks`).
 - Uses `mold` linker on Linux for faster builds (`.cargo/config.toml`).
 - `SQLX_OFFLINE=true` in CI — compiles against `.sqlx/` cache only.
 - Database: `postgres://dashboard:dashboard@postgres:5432/dashboard` (port
-  **5432** in CI, **5433** locally — compose maps 5433:5432).
+  **5432** in CI, **5434** locally — compose maps 5434:5432).
 - Postgres runs with `fsync=off` for test speed.
 
 ## Git workflow

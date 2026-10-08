@@ -114,8 +114,8 @@ just dashboard-dev                # run the server, restarting on file changes
 
 Then open <http://127.0.0.1:3000>.
 
-> Postgres binds host port **5433**, not 5432, to stay out of the way of any
-> other local Postgres.
+> Postgres binds host port **5434**, not 5432, to stay out of the way of any
+> other local Postgres (5432 is the usual one, 5433 is hofvarpnir's test DB).
 
 ## Routes
 
@@ -171,7 +171,7 @@ Read from the environment, or from `.env` in the working directory:
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `postgres://dashboard:dashboard@localhost:5433/dashboard` | Connection string |
+| `DATABASE_URL` | `postgres://dashboard:dashboard@localhost:5434/dashboard` | Connection string |
 | `BIND_ADDR` | `127.0.0.1:3000` | Listen address |
 | `RUST_LOG` | `internal_dashboard=debug,tower_http=debug,info` | Log filter |
 | `DB_MAX_CONNECTIONS` | `10` | Pool size |

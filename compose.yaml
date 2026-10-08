@@ -30,7 +30,7 @@ services:
       - -c
       - max_connections=200
     ports:
-      - "5433:5432"
+      - "5434:5432"
     # Postgres 18+ images store data in a major-version subdirectory, so the
     # mount goes at /var/lib/postgresql, not /var/lib/postgresql/data.
     # See https://github.com/docker-library/postgres/pull/1259
