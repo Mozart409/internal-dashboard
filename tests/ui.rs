@@ -599,3 +599,159 @@ async fn post_links_rejects_a_non_http_url(pool: PgPool) {
         "a rejected submission must persist nothing"
     );
 }
+
+// --- sorting -----------------------------------------------------------------
+
+/// Byte offset of `title` in the page, to compare render order.
+fn position(body: &str, title: &str) -> usize {
+    body.find(title)
+        .unwrap_or_else(|| panic!("{title} should be rendered"))
+}
+
+#[sqlx::test]
+async fn index_sort_param_orders_the_list_and_sets_the_cookie(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    app.create_link("https://b.dev", "Bravo-title", &[]).await;
+    app.create_link("https://a.dev", "Alpha-title", &[]).await;
+
+    let res = app
+        .client
+        .get(app.url("/?sort=title"))
+        .send()
+        .await
+        .expect("GET /?sort=title");
+    let cookie = res
+        .headers()
+        .get(reqwest::header::SET_COOKIE)
+        .expect("an explicit sort should be remembered")
+        .to_str()
+        .expect("ascii cookie")
+        .to_string();
+    let body = res.text().await.expect("read body");
+
+    assert!(cookie.starts_with("link-sort=title;"), "got {cookie}");
+    assert!(position(&body, "Alpha-title") < position(&body, "Bravo-title"));
+    assert!(
+        body.contains(r#"value="title" aria-pressed="true""#),
+        "the active sort should be marked pressed"
+    );
+}
+
+#[sqlx::test]
+async fn index_without_a_sort_defaults_to_newest_and_sets_no_cookie(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    app.create_link("https://a.dev", "Alpha-title", &[]).await;
+    app.create_link("https://b.dev", "Bravo-title", &[]).await;
+
+    let res = app.client.get(app.url("/")).send().await.expect("GET /");
+    assert!(res.headers().get(reqwest::header::SET_COOKIE).is_none());
+    let body = res.text().await.expect("read body");
+
+    assert!(position(&body, "Bravo-title") < position(&body, "Alpha-title"));
+    assert!(body.contains(r#"value="newest" aria-pressed="true""#));
+}
+
+#[sqlx::test]
+async fn sort_cookie_applies_to_the_page_and_to_mutation_fragments(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    app.create_link("https://b.dev", "Bravo-title", &[]).await;
+
+    let page = app
+        .client
+        .get(app.url("/"))
+        .header(reqwest::header::COOKIE, "other=1; link-sort=title")
+        .send()
+        .await
+        .expect("GET /")
+        .text()
+        .await
+        .expect("read body");
+    assert!(page.contains(r#"value="title" aria-pressed="true""#));
+
+    let fragment = with_form(
+        app.client
+            .post(app.url("/links"))
+            .header(reqwest::header::COOKIE, "link-sort=title"),
+        &[("url", "https://a.dev"), ("title", "Alpha-title")],
+    )
+    .send()
+    .await
+    .expect("POST /links")
+    .text()
+    .await
+    .expect("read body");
+
+    assert!(
+        position(&fragment, "Alpha-title") < position(&fragment, "Bravo-title"),
+        "the fragment must keep the viewer's sort, not fall back to newest"
+    );
+}
+
+#[sqlx::test]
+async fn index_ignores_an_unknown_sort(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    let res = app
+        .client
+        .get(app.url("/?sort=sideways"))
+        .send()
+        .await
+        .expect("GET /?sort=sideways");
+
+    assert!(res.status().is_success());
+    assert!(res.headers().get(reqwest::header::SET_COOKIE).is_none());
+}
+
+#[sqlx::test]
+async fn sort_toggle_keeps_the_active_tag_filter(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    let (_, body) = app.get("/?tag=rust").await;
+
+    assert!(body.contains(r#"<input type="hidden" name="tag" value="rust">"#));
+}
+
+#[sqlx::test]
+async fn link_anchor_beacons_a_click_and_the_click_route_counts_it(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    let link = app.create_link("https://a.dev", "a", &[]).await;
+
+    let (_, body) = app.get("/").await;
+    assert!(
+        body.contains(&format!("navigator.sendBeacon('/links/{}/click')", link.id)),
+        "the anchor should report clicks"
+    );
+
+    let res = app
+        .client
+        .post(app.url(&format!("/links/{}/click", link.id)))
+        .send()
+        .await
+        .expect("POST click");
+    assert_eq!(res.status(), reqwest::StatusCode::NO_CONTENT);
+
+    let reloaded: Link = app
+        .client
+        .get(app.url(&format!("/api/v1/links/{}", link.id)))
+        .send()
+        .await
+        .expect("GET link")
+        .json()
+        .await
+        .expect("decode link");
+    assert_eq!(reloaded.clicks, 1);
+}
+
+#[sqlx::test]
+async fn click_route_404s_for_an_unknown_link(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    let res = app
+        .client
+        .post(app.url(&format!("/links/{}/click", Uuid::new_v4())))
+        .send()
+        .await
+        .expect("POST click");
+
+    assert_eq!(res.status(), reqwest::StatusCode::NOT_FOUND);
+}

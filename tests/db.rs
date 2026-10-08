@@ -1203,3 +1203,82 @@ async fn tags_round_trip_unicode(pool: PgPool) {
         .expect("list_links should not error");
     assert_eq!(matched.len(), 1, "a unicode tag should be filterable");
 }
+
+// --- sorting and clicks ------------------------------------------------------
+
+#[sqlx::test]
+async fn list_links_title_sort_is_alphabetical_and_case_insensitive(pool: PgPool) {
+    for title in ["banana", "Cherry", "apple"] {
+        create(&pool, &new_link("https://a.dev", title)).await;
+    }
+
+    let links = db::list_links(&pool, None, LinkSort::Title)
+        .await
+        .expect("list_links should not error");
+
+    assert_eq!(titles(&links), vec!["apple", "banana", "Cherry"]);
+}
+
+#[sqlx::test]
+async fn list_links_clicks_sort_puts_the_most_clicked_first_and_breaks_ties_by_newest(
+    pool: PgPool,
+) {
+    let now = Utc::now();
+    let old_unclicked = create(&pool, &new_link("https://a.dev", "old-unclicked")).await;
+    let new_unclicked = create(&pool, &new_link("https://b.dev", "new-unclicked")).await;
+    let popular = create(&pool, &new_link("https://c.dev", "popular")).await;
+    let once = create(&pool, &new_link("https://d.dev", "once")).await;
+    set_created_at(&pool, old_unclicked.id, now - TimeDelta::hours(2)).await;
+    set_created_at(&pool, new_unclicked.id, now - TimeDelta::hours(1)).await;
+
+    for _ in 0..3 {
+        assert!(db::record_click(&pool, popular.id).await.expect("click"));
+    }
+    assert!(db::record_click(&pool, once.id).await.expect("click"));
+
+    let links = db::list_links(&pool, None, LinkSort::Clicks)
+        .await
+        .expect("list_links should not error");
+
+    assert_eq!(
+        titles(&links),
+        vec!["popular", "once", "new-unclicked", "old-unclicked"]
+    );
+}
+
+#[sqlx::test]
+async fn search_links_honours_the_sort(pool: PgPool) {
+    for title in ["match b", "match c", "match a"] {
+        create(&pool, &new_link("https://a.dev", title)).await;
+    }
+
+    let found = db::search_links(&pool, "match", 50, LinkSort::Title)
+        .await
+        .expect("search_links should not error");
+
+    assert_eq!(titles(&found), vec!["match a", "match b", "match c"]);
+}
+
+#[sqlx::test]
+async fn record_click_counts_without_touching_updated_at(pool: PgPool) {
+    let link = create(&pool, &new_link("https://a.dev", "a")).await;
+    assert_eq!(link.clicks, 0, "a new link starts with no clicks");
+
+    assert!(db::record_click(&pool, link.id).await.expect("click"));
+    assert!(db::record_click(&pool, link.id).await.expect("click"));
+
+    let reloaded = reload(&pool, link.id).await;
+    assert_eq!(reloaded.clicks, 2);
+    assert_eq!(
+        reloaded.updated_at, link.updated_at,
+        "opening a link is not an edit"
+    );
+}
+
+#[sqlx::test]
+async fn record_click_reports_a_missing_link(pool: PgPool) {
+    let clicked = db::record_click(&pool, Uuid::new_v4())
+        .await
+        .expect("record_click should not error");
+    assert!(!clicked, "clicking an unknown id must report false");
+}
