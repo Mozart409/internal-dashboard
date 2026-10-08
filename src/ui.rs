@@ -317,10 +317,7 @@ pub async fn index(
         }
     };
 
-    Ok((
-        AppendHeaders(set_cookie),
-        layout("Links Dashboard", body),
-    ))
+    Ok((AppendHeaders(set_cookie), layout("Links Dashboard", body)))
 }
 
 #[derive(Debug, Deserialize)]
