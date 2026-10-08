@@ -115,6 +115,7 @@ async fn create_link(
 ///
 /// # Errors
 ///
+/// Returns `AppError::Invalid` if a supplied url or title fails validation.
 /// Returns `AppError::NotFound` if the link does not exist.
 /// Returns `AppError::Database` if the update fails.
 #[utoipa::path(
@@ -127,6 +128,7 @@ async fn create_link(
     request_body = UpdateLink,
     responses(
         (status = 200, description = "Link updated", body = Link),
+        (status = 400, description = "Invalid request"),
         (status = 404, description = "Link not found"),
         (status = 500, description = "Internal server error")
     )
@@ -134,8 +136,9 @@ async fn create_link(
 async fn update_link(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-    Json(up): Json<UpdateLink>,
+    Json(mut up): Json<UpdateLink>,
 ) -> Result<Json<Link>, AppError> {
+    up.validate()?;
     let link = crate::db::update_link(&state.pool, id, &up)
         .await?
         .ok_or(AppError::NotFound)?;

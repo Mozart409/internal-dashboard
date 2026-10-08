@@ -538,6 +538,57 @@ async fn post_links_rejects_a_blank_title_with_400(pool: PgPool) {
     );
 }
 
+/// Regression: `PUT` used to skip the url check that `POST` applies, so a
+/// stored `javascript:` url became a clickable anchor (stored XSS).
+#[sqlx::test]
+async fn put_links_rejects_a_non_http_url_and_leaves_the_link_unchanged(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    let link = app.create_link("https://ok.dev", "ok", &[]).await;
+
+    for url in [
+        "javascript:alert(document.domain)",
+        "data:text/html,<script>alert(1)</script>",
+    ] {
+        let (status, body) = put_link(&app, link.id, &json!({ "url": url })).await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "PUT with {url} must be rejected with 400; body was {body}"
+        );
+        assert!(
+            body.get("error").and_then(Value::as_str).is_some(),
+            "a 400 body must carry an `error` field, got {body}"
+        );
+    }
+
+    let (_, stored) = get_json(&app, &format!("/api/v1/links/{}", link.id)).await;
+    assert_eq!(
+        stored["url"], "https://ok.dev",
+        "a rejected update must not change the stored url"
+    );
+
+    let (status, body) = put_link(&app, link.id, &json!({ "url": "https://new.dev" })).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a valid update must still succeed: {body}"
+    );
+    assert_eq!(body["url"], "https://new.dev");
+}
+
+#[sqlx::test]
+async fn put_links_rejects_a_blank_title_with_400(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    let link = app.create_link("https://ok.dev", "ok", &[]).await;
+
+    let (status, body) = put_link(&app, link.id, &json!({ "title": "   " })).await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "a whitespace-only title must be rejected on update too; body was {body}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // OpenAPI document — regression cover for the nest-prefix bug
 // ---------------------------------------------------------------------------

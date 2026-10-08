@@ -183,13 +183,39 @@ async fn get_link_returns_none_after_the_table_has_other_rows(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn create_link_does_not_validate_its_input(pool: PgPool) {
-    // Validation lives in `NewLink::validate`, not in the data layer. This
-    // pins the layering: db::create_link stores whatever it is handed.
-    let created = create(&pool, &new_link("not-a-url", "")).await;
+async fn create_link_leaves_field_validation_to_the_caller(pool: PgPool) {
+    // Validation lives in `NewLink::validate`, not in the data layer: a blank
+    // title is stored verbatim. The url scheme is the one exception (below).
+    let created = create(&pool, &new_link("https://a.dev", "")).await;
 
-    assert_eq!(created.url, "not-a-url", "db layer stores the url verbatim");
     assert_eq!(created.title, "", "db layer stores an empty title verbatim");
+}
+
+#[sqlx::test]
+async fn create_and_update_refuse_a_non_http_url_even_unvalidated(pool: PgPool) {
+    // The url becomes an href, so the data layer is a backstop against a
+    // caller that skipped validation storing `javascript:` (stored XSS).
+    for url in ["not-a-url", "javascript:alert(1)", "data:text/html,x"] {
+        assert!(
+            db::create_link(&pool, &new_link(url, "a")).await.is_err(),
+            "create_link must refuse {url}"
+        );
+    }
+
+    let link = create(&pool, &new_link("https://a.dev", "a")).await;
+    let up = UpdateLink {
+        url: Some("javascript:alert(1)".into()),
+        ..UpdateLink::default()
+    };
+    assert!(
+        db::update_link(&pool, link.id, &up).await.is_err(),
+        "update_link must refuse a non-http url"
+    );
+    assert_eq!(
+        reload(&pool, link.id).await.url,
+        "https://a.dev",
+        "a refused update must leave the row alone"
+    );
 }
 
 // --- list_links -------------------------------------------------------------

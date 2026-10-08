@@ -5,7 +5,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::models::{Link, LinkSort, NewLink, UpdateLink};
+use crate::models::{Link, LinkSort, NewLink, UpdateLink, validate_url};
 
 /// All links in `sort` order. `tag` filters to links carrying that tag.
 ///
@@ -96,8 +96,11 @@ pub async fn search_links(
 /// Insert a new link and return it as stored.
 ///
 /// # Errors
-/// Returns [`AppError::Database`] if the insert fails.
+/// Returns [`AppError::Invalid`] if the url is not `http(s)://` (a backstop
+/// for callers that skipped [`NewLink::validate`]), or [`AppError::Database`]
+/// if the insert fails.
 pub async fn create_link(pool: &PgPool, new: &NewLink) -> Result<Link, AppError> {
+    validate_url(&new.url)?;
     let link = sqlx::query_as!(
         Link,
         r#"
@@ -123,12 +126,17 @@ pub async fn create_link(pool: &PgPool, new: &NewLink) -> Result<Link, AppError>
 /// Returns `None` if no link has that id.
 ///
 /// # Errors
-/// Returns [`AppError::Database`] if the update fails.
+/// Returns [`AppError::Invalid`] if a supplied url is not `http(s)://` (a
+/// backstop for callers that skipped [`UpdateLink::validate`]), or
+/// [`AppError::Database`] if the update fails.
 pub async fn update_link(
     pool: &PgPool,
     id: Uuid,
     up: &UpdateLink,
 ) -> Result<Option<Link>, AppError> {
+    if let Some(url) = up.url.as_deref() {
+        validate_url(url)?;
+    }
     let link = sqlx::query_as!(
         Link,
         r#"

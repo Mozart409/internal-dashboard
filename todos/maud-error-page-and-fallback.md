@@ -52,4 +52,4 @@ Add to `tests/ui.rs` and `tests/api.rs`:
 - every existing `tests/api.rs` assertion about JSON error bodies still passes —
   this is the regression risk
 
-Related: [[stored-xss-via-unvalidated-url-update]], [[sse-ignores-active-tag-filter]]
+Related: [[sse-ignores-active-tag-filter]]

@@ -154,20 +154,17 @@ impl LinksServer {
         let id =
             Uuid::parse_str(&params.0.id).map_err(|_| format!("Invalid UUID: {}", params.0.id))?;
 
-        // Reuse the same URL validation the API and UI apply, but only when a
-        // new URL is actually being set.
-        if let Some(url) = params.0.url.as_deref()
-            && !(url.starts_with("http://") || url.starts_with("https://"))
-        {
-            return Err("url must start with http:// or https://".to_string());
-        }
-
-        let update = UpdateLink {
+        let mut update = UpdateLink {
             url: params.0.url,
             title: params.0.title,
             description: params.0.description,
             tags: params.0.tags,
         };
+
+        // The same validation the API and UI apply.
+        if let Err(e) = update.validate() {
+            return Err(format!("Invalid link: {e}"));
+        }
 
         match db::update_link(&self.state.pool, id, &update).await {
             Ok(Some(link)) => {

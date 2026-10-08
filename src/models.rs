@@ -114,13 +114,63 @@ impl NewLink {
         if self.title.is_empty() {
             return Err(crate::error::AppError::Invalid("title is required".into()));
         }
-        if !(self.url.starts_with("http://") || self.url.starts_with("https://")) {
-            return Err(crate::error::AppError::Invalid(
-                "url must start with http:// or https://".into(),
-            ));
+        validate_url(&self.url)
+    }
+}
+
+impl UpdateLink {
+    /// The update counterpart of [`NewLink::validate`]: the fields being set
+    /// are trimmed and checked by the same rules, absent ones are left alone.
+    ///
+    /// # Errors
+    /// Returns [`AppError::Invalid`](crate::error::AppError::Invalid) if a
+    /// supplied url or title is blank, or the url is not `http://` or
+    /// `https://`.
+    pub fn validate(&mut self) -> Result<(), crate::error::AppError> {
+        if let Some(url) = &mut self.url {
+            *url = url.trim().to_string();
+            if url.is_empty() {
+                return Err(crate::error::AppError::Invalid(
+                    "url must not be blank".into(),
+                ));
+            }
+            validate_url(url)?;
+        }
+        if let Some(title) = &mut self.title {
+            *title = title.trim().to_string();
+            if title.is_empty() {
+                return Err(crate::error::AppError::Invalid(
+                    "title must not be blank".into(),
+                ));
+            }
         }
         Ok(())
     }
+}
+
+/// The one url rule every write path shares: an allow-list of `http://` and
+/// `https://`. The stored url becomes an anchor's `href`, and HTML escaping
+/// does nothing about the scheme, so `javascript:`, `data:` and the like must
+/// never be stored.
+///
+/// # Errors
+/// Returns [`AppError::Invalid`](crate::error::AppError::Invalid) for any
+/// other scheme.
+pub fn validate_url(url: &str) -> Result<(), crate::error::AppError> {
+    if is_http_url(url) {
+        Ok(())
+    } else {
+        Err(crate::error::AppError::Invalid(
+            "url must start with http:// or https://".into(),
+        ))
+    }
+}
+
+/// Whether `url` is `http://` or `https://`, the only schemes rendered as
+/// links.
+#[must_use]
+pub fn is_http_url(url: &str) -> bool {
+    url.starts_with("http://") || url.starts_with("https://")
 }
 
 /// HTML forms send tags as one comma-separated field; JSON sends an array.
@@ -206,6 +256,56 @@ mod tests {
     fn validate_rejects_non_http_schemes() {
         let mut link = new_link(r#"{"url":"ftp://a.dev","title":"a"}"#);
         assert!(link.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_script_and_data_schemes() {
+        for url in [
+            "javascript:alert(1)",
+            "JavaScript:alert(1)",
+            "data:text/html,<script>alert(1)</script>",
+            "vbscript:msgbox(1)",
+        ] {
+            let mut link = NewLink {
+                url: url.into(),
+                title: "a".into(),
+                description: None,
+                tags: vec![],
+            };
+            assert!(link.validate().is_err(), "{url} must be rejected");
+        }
+    }
+
+    fn update(json: &str) -> UpdateLink {
+        serde_json::from_str(json).expect("valid UpdateLink")
+    }
+
+    #[test]
+    fn update_validate_rejects_a_non_http_url() {
+        for url in ["javascript:alert(1)", "data:text/html,x", "  ftp://a.dev  "] {
+            let mut up = UpdateLink {
+                url: Some(url.into()),
+                ..UpdateLink::default()
+            };
+            assert!(up.validate().is_err(), "{url} must be rejected");
+        }
+    }
+
+    #[test]
+    fn update_validate_trims_the_fields_it_sets_and_ignores_absent_ones() {
+        let mut up = update(r#"{"url":"  https://a.dev  ","title":"  a  "}"#);
+        up.validate().expect("should be valid");
+        assert_eq!(up.url.as_deref(), Some("https://a.dev"));
+        assert_eq!(up.title.as_deref(), Some("a"));
+
+        let mut tags_only = update(r#"{"tags":["x"]}"#);
+        tags_only.validate().expect("no url or title to check");
+    }
+
+    #[test]
+    fn update_validate_rejects_blank_url_and_title() {
+        assert!(update(r#"{"url":"   "}"#).validate().is_err());
+        assert!(update(r#"{"title":"   "}"#).validate().is_err());
     }
 
     #[test]

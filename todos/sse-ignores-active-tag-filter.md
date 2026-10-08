@@ -52,4 +52,4 @@ Add to `tests/sse.rs`:
   their own filter
 - the existing unfiltered cross-client test keeps passing
 
-Related: [[stored-xss-via-unvalidated-url-update]], [[maud-error-page-and-fallback]]
+Related: [[maud-error-page-and-fallback]]

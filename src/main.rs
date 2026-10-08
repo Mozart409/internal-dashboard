@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://dashboard:dashboard@localhost:5433/dashboard".into());
+        .unwrap_or_else(|_| "postgres://dashboard:dashboard@localhost:5434/dashboard".into());
     let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:3000".into());
 
     let max_connections = env_setting("DB_MAX_CONNECTIONS", 10u32)?;

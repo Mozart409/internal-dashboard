@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::events::{AppState, LinkEvent};
-use crate::models::{Link, LinkSort, NewLink, UpdateLink};
+use crate::models::{Link, LinkSort, NewLink, UpdateLink, is_http_url};
 
 /// Vendored htmx assets, embedded in the binary so the dashboard works with no
 /// network access and without needing `static/` next to the executable.
@@ -144,7 +144,10 @@ pub fn render_link_list(links: &[Link]) -> Markup {
                     div class="link-title" {
                         // The href stays the real URL (hover, copy, middle-click
                         // all behave); the beacon counts the click on the side.
-                        a href=(link.url) target="_blank" rel="noopener noreferrer"
+                        // A row stored before update validation existed could
+                        // still hold a `javascript:` url, so only http(s) ever
+                        // becomes an href.
+                        a href=(if is_http_url(&link.url) { link.url.as_str() } else { "#" }) target="_blank" rel="noopener noreferrer"
                             onclick={"navigator.sendBeacon('/links/" (link.id) "/click')"}
                             onauxclick={"if (event.button === 1) navigator.sendBeacon('/links/" (link.id) "/click')"} {
                             (link.title)
@@ -400,13 +403,15 @@ pub async fn create_link(
 /// PUT /links/{id} — Update a link.
 ///
 /// # Errors
-/// Returns error if the link is not found or database operation fails.
+/// Returns error if validation fails, the link is not found or the database
+/// operation fails.
 pub async fn update_link(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Form(update): Form<UpdateLink>,
+    Form(mut update): Form<UpdateLink>,
 ) -> Result<Markup, AppError> {
+    update.validate()?;
     let link = crate::db::update_link(&state.pool, id, &update)
         .await?
         .ok_or(AppError::NotFound)?;

@@ -600,6 +600,53 @@ async fn post_links_rejects_a_non_http_url(pool: PgPool) {
     );
 }
 
+/// Regression: the UI update route skipped url validation (stored XSS).
+#[sqlx::test]
+async fn put_links_rejects_a_non_http_url(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    let link = app.create_link("https://ok.dev", "ok", &[]).await;
+
+    for url in ["javascript:alert(1)", "data:text/html,x"] {
+        let res = with_form(
+            app.client.put(app.url(&format!("/links/{}", link.id))),
+            &[("url", url), ("title", "ok")],
+        )
+        .send()
+        .await
+        .expect("PUT /links/{id}");
+        assert_eq!(
+            res.status(),
+            reqwest::StatusCode::BAD_REQUEST,
+            "the UI update route must reject {url}"
+        );
+    }
+
+    let (_, page) = app.get("/").await;
+    assert!(
+        page.contains("href=\"https://ok.dev\""),
+        "a rejected update must leave the stored url alone"
+    );
+}
+
+/// A `javascript:` url stored before update validation existed must not
+/// render as a clickable href.
+#[sqlx::test]
+async fn index_never_renders_a_non_http_url_as_an_href(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    // Straight into the table, the way such a row got there: past validation.
+    sqlx::query("insert into links (url, title) values ('javascript:alert(1)', 'legacy')")
+        .execute(&app.pool)
+        .await
+        .expect("insert legacy row");
+
+    let (_, page) = app.get("/").await;
+    assert!(page.contains("legacy"), "the row should still be listed");
+    assert!(
+        !page.contains("href=\"javascript:"),
+        "a non-http(s) url must never become an href"
+    );
+}
+
 // --- sorting -----------------------------------------------------------------
 
 /// Byte offset of `title` in the page, to compare render order.
