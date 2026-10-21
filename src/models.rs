@@ -241,7 +241,7 @@ mod tests {
     #[test]
     fn tags_default_to_empty_when_omitted() {
         let link = new_link(r#"{"url":"https://a.dev","title":"a"}"#);
-        assert!(link.tags.is_empty());
+        assert_eq!(link.tags, Vec::<String>::new());
     }
 
     #[test]

@@ -201,6 +201,7 @@ impl LinksServer {
     }
 }
 
+#[allow(clippy::unused_async_trait_impl)]
 #[tool_handler(
     name = "internal-dashboard",
     version = "0.1.0",
