@@ -2,6 +2,8 @@
 name = "internal-dashboard"
 version = "0.2.1"
 edition = "2024"
+publish = false
+license = "MIT"
 
 # Tuned for compile speed over runtime speed — this is an internal dashboard,
 # not perf-critical. opt-level 3 vs 2 costs real compile time for little gain
@@ -42,9 +44,9 @@ tokio-stream = { version = "0.1.19", features = ["sync"] }
 tower-http = { version = "0.7.0", features = ["trace", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
-utoipa = { version = "5.5.0", features = ["axum_extras", "uuid", "chrono"] }
-utoipa-axum = "0.2.0"
-utoipa-scalar = { version = "0.3.0", features = ["axum"] }
+utoipa = { version = "6.0.0", features = ["axum_extras", "uuid", "chrono"] }
+utoipa-axum = "0.3.0"
+utoipa-scalar = { version = "0.4.0", features = ["axum"] }
 uuid = { version = "1.24.0", features = ["v4", "serde"] }
 
 [dev-dependencies]
