@@ -47,7 +47,9 @@ just dashboard-check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles
 - All tests drive the **real router** via `internal_dashboard::build_router`
   (tests/common/mod.rs). Do not reconstruct routing in tests.
 - `just dashboard-test` depends on `dashboard-db-ready`, which auto-starts Postgres via podman
-  if unreachable.
+  if unreachable, and leaves it running. `just dashboard-ci` (the root pre-push gate) and
+  `just dashboard-with-db <recipes>` start it only for the run, wait for healthy, and stop it
+  again afterwards, also on failure.
 - Postgres binds **host port 5434** (not 5432, nor 5433: that is hofvarpnir's `postgres-test`).
 
 ## Linting and formatting
