@@ -47,7 +47,7 @@ just dashboard-check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles
 - All tests drive the **real router** via `internal_dashboard::build_router`
   (tests/common/mod.rs). Do not reconstruct routing in tests.
 - `just dashboard-test` depends on `dashboard-db-ready`, which auto-starts Postgres via podman
-  if unreachable, and leaves it running. `just dashboard-ci` (the root pre-push gate) and
+  if unreachable, and leaves it running. `just dashboard-ci` and
   `just dashboard-with-db <recipes>` start it only for the run (unless one is already up),
   wait until it accepts connections, migrate it, and stop it again afterwards, also on failure.
 - Postgres binds **host port 5434** (not 5432, nor 5433: that is hofvarpnir's `postgres-test`).
@@ -57,7 +57,9 @@ just dashboard-check-offline    # SQLX_OFFLINE=true cargo check (how CI compiles
 - **Clippy pedantic is denied** via `Cargo.toml [lints.clippy]`. Applies
   identically to `cargo clippy`, rust-analyzer, and CI.
 - The root lefthook runs alejandra, keep-sorted, `just --fmt`, shellcheck and rustfmt on commit,
-  and `just dashboard-ci` at pre-push when the push touches this project; run it yourself before
+  and at pre-push, when the push touches this project, the same checks as crane builds
+  (`nix/checks.nix`, Postgres inside the build) plus `just dashboard-sorted-check`; an unchanged
+  source finds the builds already in the store. Run `just dashboard-ci` yourself before
   committing anyway.
 - `keep-sorted` blocks are enforced on pre-commit. Do not manually reorder
   lines between the start and end markers.
