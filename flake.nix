@@ -55,6 +55,11 @@
         ...
       }: let
         toolchain = toolchainFor system;
+        # nixpkgs' sqlx-cli 0.9.0 links the system libsqlite3 without sqlite in
+        # buildInputs (`cannot find -lsqlite3`); drop once nixpkgs fixes it.
+        sqlx-cli = pkgs.sqlx-cli.overrideAttrs (old: {
+          buildInputs = old.buildInputs ++ [pkgs.sqlite];
+        });
         package = packageFor pkgs;
         # The tests take `pkgs` with the overlay already applied.
         testPkgs = pkgs.extend self.overlays.default;
