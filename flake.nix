@@ -70,40 +70,34 @@
           inherit toolchain;
         };
 
-        checks =
-          {
-            inherit package;
-            # Evaluates the module into a whole NixOS system and asserts on the
-            # result. Pure evaluation, so it runs on any host.
-            module-eval = import ./nix/tests/eval.nix {
-              inherit self nixpkgs;
-              pkgs = testPkgs;
-            };
-          }
-          # The VM test needs a Linux builder.
-          // pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
-            module-vm = import ./nix/tests/vm.nix {
-              inherit self;
-              pkgs = testPkgs;
-            };
+        checks = {
+          inherit package;
+          # Evaluates the module into a whole NixOS system and asserts on the
+          # result. Pure evaluation, so it runs on any host.
+          module-eval = import ./nix/tests/eval.nix {
+            inherit self nixpkgs;
+            pkgs = testPkgs;
           };
+          module-vm = import ./nix/tests/vm.nix {
+            inherit self;
+            pkgs = testPkgs;
+          };
+        };
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs;
-            [
-              # keep-sorted start
-              cargo-edit
-              cargo-watch
-              inputs.fenix.packages.${system}.stable.rust-analyzer
-              podman-compose
-              postgresql_18
-              sqlx-cli
-              tailwindcss_4
-              toolchain
-              # keep-sorted end
-            ]
-            # .cargo/config.toml only points at mold on linux-gnu targets.
-            ++ lib.optionals stdenv.isLinux [mold];
+          packages = with pkgs; [
+            # keep-sorted start
+            cargo-edit
+            cargo-watch
+            inputs.fenix.packages.${system}.stable.rust-analyzer
+            mold
+            podman-compose
+            postgresql_18
+            sqlx-cli
+            tailwindcss_4
+            toolchain
+            # keep-sorted end
+          ];
         };
       };
 
