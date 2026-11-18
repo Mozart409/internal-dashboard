@@ -1,0 +1,4 @@
+# Only the required database Secret, for `helm lint` and `helm template` in
+# `just dashboard-deploy-check`.
+database:
+  existingSecret: internal-dashboard-db

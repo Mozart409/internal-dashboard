@@ -2,17 +2,17 @@
 //! `initialize`, `notifications/initialized`, then `tools/list` and
 //! `tools/call` over rmcp's streamable-HTTP transport at `/mcp`.
 //!
-//! Wire shape, discovered against the running server:
+//! The service is stateless, so any replica behind the Service can answer any
+//! request. Wire shape, discovered against the running server:
 //!
-//! * every POST answers `200` with `content-type: text/event-stream`;
-//! * rmcp emits a priming frame (`data:` empty, plus `id:` and `retry:`)
-//!   *before* the JSON-RPC payload, and leaves the stream open afterwards, so
-//!   readers must skip empty `data:` lines and must never read to end-of-body;
+//! * there is no `mcp-session-id`: `initialize` does not return one and no
+//!   request sends one;
+//! * after `initialize` a client sends `mcp-protocol-version` on every request;
+//! * every POST answers `200` with `content-type: application/json`, and
+//!   `notifications/initialized` answers `202`;
 //! * a tool failure is reported in-band as `result.isError == true` with the
 //!   message in `result.content[0].text` — not as a JSON-RPC `error`.
 //!
-//! Dropping a response before its payload arrives cancels the tool call
-//! server-side, so `envelope` always reads the payload out before returning.
 //! Every read is bounded by a timeout so a missing reply fails the test rather
 //! than hanging the suite.
 
@@ -31,8 +31,18 @@ const REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 type ByteStream = Pin<Box<dyn Stream<Item = reqwest::Result<Vec<u8>>> + Send>>;
 
+/// Protocol version the tests negotiate in `initialize` and then repeat in the
+/// `mcp-protocol-version` header, as a real client does.
+const PROTOCOL_VERSION: &str = "2025-06-18";
+
 /// POST one JSON-RPC message to `/mcp`, with the headers the transport requires.
-async fn post(app: &common::TestApp, session: Option<&str>, body: &Value) -> reqwest::Response {
+/// `protocol_version` is the `mcp-protocol-version` header, sent on everything
+/// after `initialize`.
+async fn post(
+    app: &common::TestApp,
+    protocol_version: Option<&str>,
+    body: &Value,
+) -> reqwest::Response {
     let mut req = app
         .client
         .post(app.url("/mcp"))
@@ -40,14 +50,14 @@ async fn post(app: &common::TestApp, session: Option<&str>, body: &Value) -> req
         .header("accept", "application/json, text/event-stream")
         .json(body);
 
-    if let Some(session) = session {
-        req = req.header("mcp-session-id", session);
+    if let Some(version) = protocol_version {
+        req = req.header("mcp-protocol-version", version);
     }
 
     req.send().await.expect("POST /mcp")
 }
 
-/// Read the JSON-RPC envelope out of a streaming `/mcp` response.
+/// Read the JSON-RPC envelope out of a `/mcp` response.
 async fn envelope(res: reqwest::Response) -> Value {
     assert_eq!(
         res.status(),
@@ -55,39 +65,21 @@ async fn envelope(res: reqwest::Response) -> Value {
         "an MCP request should be answered with 200"
     );
 
-    let mut stream: ByteStream =
-        Box::pin(res.bytes_stream().map(|chunk| chunk.map(|b| b.to_vec())));
-    let mut buf: Vec<u8> = Vec::new();
+    let content_type = res
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .expect("/mcp must send a content-type")
+        .to_str()
+        .expect("content-type should be ASCII");
+    assert!(
+        content_type.starts_with("application/json"),
+        "a stateless MCP reply should be plain JSON, got content-type {content_type}"
+    );
 
-    let read = async {
-        loop {
-            while let Some(end) = buf.windows(2).position(|w| w == b"\n\n") {
-                let block =
-                    String::from_utf8(buf[..end].to_vec()).expect("MCP frames should be UTF-8");
-                buf.drain(..end + 2);
-
-                for line in block.split('\n') {
-                    let line = line.strip_suffix('\r').unwrap_or(line);
-                    // Skip rmcp's priming frame, whose `data:` field is empty.
-                    if let Some(rest) = line.strip_prefix("data:")
-                        && !rest.trim().is_empty()
-                    {
-                        return serde_json::from_str::<Value>(rest.trim())
-                            .expect("the data: line should carry a JSON-RPC message");
-                    }
-                }
-            }
-
-            let Some(chunk) = stream.next().await else {
-                panic!("the /mcp stream closed before a JSON-RPC payload arrived");
-            };
-            buf.extend_from_slice(&chunk.expect("MCP body chunk should read cleanly"));
-        }
-    };
-
-    timeout(REPLY_TIMEOUT, read)
+    timeout(REPLY_TIMEOUT, res.json::<Value>())
         .await
         .unwrap_or_else(|_| panic!("no JSON-RPC payload within {REPLY_TIMEOUT:?}"))
+        .expect("the body should carry a JSON-RPC message")
 }
 
 /// The `result` of a `tools/call`.
@@ -119,21 +111,21 @@ impl ToolResult {
     }
 }
 
-/// An initialized MCP session.
+/// An initialized MCP client. There is no server-side session: the value only
+/// remembers which replica it talks to and numbers its requests.
 struct Session<'a> {
     app: &'a common::TestApp,
-    id: String,
     next_rpc_id: i64,
 }
 
 impl<'a> Session<'a> {
     /// Run the full handshake: `initialize`, then `notifications/initialized`.
     async fn open(app: &'a common::TestApp) -> Session<'a> {
-        let (id, _) = initialize(app).await;
+        initialize(app).await;
 
         let res = post(
             app,
-            Some(&id),
+            Some(PROTOCOL_VERSION),
             &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
         )
         .await;
@@ -145,8 +137,15 @@ impl<'a> Session<'a> {
 
         Session {
             app,
-            id,
             next_rpc_id: 100,
+        }
+    }
+
+    /// Keep talking to another replica, without a new handshake.
+    fn moved_to(self, app: &common::TestApp) -> Session<'_> {
+        Session {
+            app,
+            next_rpc_id: self.next_rpc_id,
         }
     }
 
@@ -158,7 +157,7 @@ impl<'a> Session<'a> {
 
         let res = post(
             self.app,
-            Some(&self.id),
+            Some(PROTOCOL_VERSION),
             &json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params }),
         )
         .await;
@@ -197,9 +196,9 @@ impl<'a> Session<'a> {
     }
 }
 
-/// `initialize` on a fresh connection, returning the session id and the
-/// `result` member of the reply.
-async fn initialize(app: &common::TestApp) -> (String, Value) {
+/// `initialize` on a fresh connection, returning the `result` member of the
+/// reply. The reply must not carry a session id.
+async fn initialize(app: &common::TestApp) -> Value {
     let res = post(
         app,
         None,
@@ -208,7 +207,7 @@ async fn initialize(app: &common::TestApp) -> (String, Value) {
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-06-18",
+                "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": { "name": "internal-dashboard-tests", "version": "1" },
             },
@@ -216,13 +215,10 @@ async fn initialize(app: &common::TestApp) -> (String, Value) {
     )
     .await;
 
-    let session = res
-        .headers()
-        .get("mcp-session-id")
-        .expect("initialize must return an mcp-session-id header")
-        .to_str()
-        .expect("the session id should be ASCII")
-        .to_owned();
+    assert!(
+        res.headers().get("mcp-session-id").is_none(),
+        "a stateless server must not hand out an mcp-session-id"
+    );
 
     let envelope = envelope(res).await;
     assert!(
@@ -230,7 +226,7 @@ async fn initialize(app: &common::TestApp) -> (String, Value) {
         "initialize failed at the protocol level: {envelope}"
     );
 
-    (session, envelope["result"].clone())
+    envelope["result"].clone()
 }
 
 /// Every link currently in the database, read back through the REST surface.
@@ -299,15 +295,11 @@ async fn next_event(stream: &mut ByteStream, expecting: &str) -> (String, String
 }
 
 #[sqlx::test]
-async fn initialize_identifies_the_server_and_opens_a_session(pool: PgPool) {
+async fn initialize_identifies_the_server_without_opening_a_session(pool: PgPool) {
     let app = common::spawn(pool).await;
 
-    let (session, result) = initialize(&app).await;
+    let result = initialize(&app).await;
 
-    assert!(
-        !session.is_empty(),
-        "the mcp-session-id header must carry a usable session id"
-    );
     assert_eq!(
         result["serverInfo"]["name"], "internal-dashboard",
         "initialize must identify the server, got: {result}"
@@ -496,8 +488,8 @@ async fn invalid_arguments_surface_as_tool_errors(pool: PgPool) {
     );
 }
 
-/// The whole point of the shared broadcast channel: a write that arrives over
-/// MCP still reaches every browser tab watching `/events`.
+/// A write that arrives over MCP still reaches every browser tab watching
+/// `/events`.
 #[sqlx::test]
 async fn a_link_added_over_mcp_reaches_an_open_browser(pool: PgPool) {
     let app = common::spawn(pool).await;
@@ -524,5 +516,36 @@ async fn a_link_added_over_mcp_reaches_an_open_browser(pool: PgPool) {
     assert!(
         data.contains("sse-swap"),
         "the swapped-in markup must re-emit sse-swap so later updates keep arriving, got: {data}"
+    );
+}
+
+/// The point of stateless MCP: with two replicas behind one Service, the
+/// handshake can land on one and the next call on the other.
+#[sqlx::test]
+async fn a_session_started_on_one_replica_works_on_another(pool: PgPool) {
+    let a = common::spawn(pool.clone()).await;
+    let b = common::spawn(pool).await;
+    let mcp = Session::open(&a).await;
+    let mut mcp = mcp.moved_to(&b);
+
+    mcp.call_tool(
+        "add_link",
+        json!({ "url": "https://example.com/ha", "title": "Added via replica B" }),
+    )
+    .await
+    .expect_ok("add_link on a replica that never saw the handshake");
+
+    let listed = mcp
+        .call_tool("list_links", json!({}))
+        .await
+        .expect_ok("list_links on the second replica");
+    assert!(
+        listed.contains("Added via replica B"),
+        "the second replica should see the link it just added, got: {listed}"
+    );
+    assert_eq!(
+        links_in_db(&a).await.len(),
+        1,
+        "the first replica reads the same database"
     );
 }

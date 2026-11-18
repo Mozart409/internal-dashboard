@@ -8,7 +8,7 @@ use utoipa_axum::routes;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::events::{AppState, LinkEvent};
+use crate::events::AppState;
 use crate::models::{Link, LinkSort, NewLink, UpdateLink};
 
 /// Query parameters for list endpoints.
@@ -106,8 +106,6 @@ async fn create_link(
     new.validate()?;
     let link = crate::db::create_link(&state.pool, &new).await?;
 
-    state.publish(LinkEvent::Created(link.clone()));
-
     Ok((StatusCode::CREATED, Json(link)))
 }
 
@@ -143,8 +141,6 @@ async fn update_link(
         .await?
         .ok_or(AppError::NotFound)?;
 
-    state.publish(LinkEvent::Updated(link.clone()));
-
     Ok(Json(link))
 }
 
@@ -176,8 +172,6 @@ async fn delete_link(
     if !deleted {
         return Err(AppError::NotFound);
     }
-
-    state.publish(LinkEvent::Deleted(id));
 
     Ok(StatusCode::NO_CONTENT)
 }

@@ -1,0 +1,56 @@
+# Every optional feature on, for `helm template` in `just dashboard-deploy-check`.
+# The HPA owns the replica count here, so replicaCount is not rendered.
+database:
+  existingSecret: internal-dashboard-db
+  secretKey: url
+  listenSecretKey: database-listen-url
+  maxConnections: 5
+
+logLevel: debug
+
+mcp:
+  extraAllowedHosts:
+    - dash.example.com
+
+extraEnv:
+  - name: DB_ACQUIRE_TIMEOUT_SECS
+    value: "10"
+
+serviceAccount:
+  create: true
+  annotations:
+    example.com/owner: platform
+
+podAnnotations:
+  example.com/scrape: "true"
+podLabels:
+  example.com/team: platform
+priorityClassName: system-cluster-critical
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+httpRoute:
+  enabled: true
+  parentRefs:
+    - name: public-gateway
+      namespace: gateway-system
+      sectionName: https
+  hostnames:
+    - dashboard.homelab.internal
+  timeouts:
+    request: 0s
+
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: example.com/dedicated
+    operator: Exists
+    effect: NoSchedule

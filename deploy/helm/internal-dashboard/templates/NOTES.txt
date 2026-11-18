@@ -1,0 +1,21 @@
+internal-dashboard {{ .Values.image.tag | default .Chart.AppVersion }} is deployed as {{ include "internal-dashboard.fullname" . }}.
+
+Reach it in the cluster:
+  http://{{ include "internal-dashboard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+{{- if .Values.httpRoute.enabled }}
+{{- range .Values.httpRoute.hostnames }}
+  https://{{ . }}{{ $.Values.httpRoute.path }}
+{{- end }}
+{{- else }}
+
+Try it locally:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "internal-dashboard.fullname" . }} 3000:{{ .Values.service.port }}
+  curl http://localhost:3000/health/ready
+{{- end }}
+
+Warning: the app has no authentication. Anyone who can reach it can read and
+change every link, through the UI, /api/v1 and /mcp. Keep it behind the Gateway
+with an auth proxy, or on a trusted network only.
+
+Changes to the database Secret or `extraEnv` need:
+  kubectl -n {{ .Release.Namespace }} rollout restart deploy/{{ include "internal-dashboard.fullname" . }}

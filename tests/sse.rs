@@ -1,8 +1,9 @@
 //! The live-update contract.
 //!
-//! Every surface publishes into one broadcast channel, so a change made through
-//! any of them has to reach every connected browser. These tests drive the real
-//! router over real sockets and read `/events` incrementally.
+//! The `links_notify` trigger NOTIFYs on every change, so a change made through
+//! any surface, on any replica, has to reach every connected browser. These
+//! tests drive the real router over real sockets and read `/events`
+//! incrementally.
 //!
 //! Every read is bounded by a timeout, so a missing event fails the test
 //! instead of hanging the suite forever.
@@ -105,8 +106,9 @@ fn parse_frame(block: &str) -> Option<Frame> {
 /// Open `/events` and return a reader positioned before the first frame.
 ///
 /// The handler subscribes to the broadcast channel before it can return a
-/// response, so by the time this function returns the subscription is live and
-/// the caller cannot miss an event it triggers next.
+/// response, and `spawn` finished `LISTEN` before serving, so by the time this
+/// function returns the subscription is live and the caller cannot miss an
+/// event it triggers next.
 async fn subscribe(app: &common::TestApp) -> Frames {
     let res = app
         .client
@@ -205,11 +207,12 @@ async fn a_create_on_another_connection_reaches_an_open_subscriber(pool: PgPool)
 #[sqlx::test]
 async fn an_update_broadcasts_an_updated_frame(pool: PgPool) {
     let app = common::spawn(pool).await;
+    let mut frames = subscribe(&app).await;
     let link = app
         .create_link("https://example.com/u", "Before rename", &["rust"])
         .await;
+    frames.next_frame("the created frame for the setup").await;
 
-    let mut frames = subscribe(&app).await;
     put_link(
         &app,
         link.id,
@@ -233,11 +236,12 @@ async fn an_update_broadcasts_an_updated_frame(pool: PgPool) {
 #[sqlx::test]
 async fn a_delete_broadcasts_a_deleted_frame(pool: PgPool) {
     let app = common::spawn(pool).await;
+    let mut frames = subscribe(&app).await;
     let link = app
         .create_link("https://example.com/d", "Doomed link", &["rust"])
         .await;
+    frames.next_frame("the created frame for the setup").await;
 
-    let mut frames = subscribe(&app).await;
     let res = app
         .client
         .delete(app.url(&format!("/api/v1/links/{}", link.id)))
@@ -344,5 +348,106 @@ async fn two_concurrent_subscribers_receive_the_same_event(pool: PgPool) {
     assert_eq!(
         a.data, b.data,
         "every subscriber must receive the identical re-rendered list"
+    );
+}
+
+/// High availability: replicas share only the database, so a write on one has
+/// to reach a browser connected to the other.
+#[sqlx::test]
+async fn a_write_on_one_replica_reaches_a_subscriber_on_another(pool: PgPool) {
+    let a = common::spawn(pool.clone()).await;
+    let b = common::spawn(pool).await;
+    let mut frames = subscribe(&b).await;
+
+    let link = a
+        .create_link("https://example.com/ha", "Written on replica A", &["rust"])
+        .await;
+
+    let frame = frames.next_frame("the created frame from replica A").await;
+
+    assert_eq!(
+        frame.name, "created",
+        "a create on replica A must reach a subscriber on replica B as `created`"
+    );
+    assert!(
+        frame.data.contains(&link.title),
+        "replica B must re-render the list with the link written on A, got: {}",
+        frame.data
+    );
+}
+
+/// On SIGTERM the stream ends, so the browser reconnects to a pod that is
+/// still up instead of hanging on the draining one.
+#[sqlx::test]
+async fn the_stream_ends_when_shutdown_is_cancelled(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    let mut frames = subscribe(&app).await;
+
+    app.shutdown();
+
+    let ended = timeout(FRAME_TIMEOUT, async {
+        loop {
+            match frames.stream.next().await {
+                None => return,
+                Some(chunk) => {
+                    chunk.expect("the stream should end cleanly, not error");
+                }
+            }
+        }
+    })
+    .await;
+
+    assert!(
+        ended.is_ok(),
+        "/events must end within {FRAME_TIMEOUT:?} of shutdown being cancelled"
+    );
+}
+
+/// A click is not an edit: the trigger skips click-only updates, so open lists
+/// are not re-rendered (and reordered) under the viewer. The PUT after the
+/// click proves it: events arrive in order, so if the click had broadcast, its
+/// frame would be read before the `updated` frame for the edit.
+#[sqlx::test]
+async fn a_click_does_not_broadcast(pool: PgPool) {
+    let app = common::spawn(pool).await;
+    // Subscribe before creating: the create's NOTIFY reaches the listener
+    // asynchronously, so a subscriber opened after the create could still
+    // receive its frame and mistake it for the click's.
+    let mut frames = subscribe(&app).await;
+    let link = app
+        .create_link("https://example.com/click", "Click target", &[])
+        .await;
+    let created = frames.next_frame("the created frame for the setup").await;
+    assert_eq!(
+        created.name, "created",
+        "setup: the create should broadcast"
+    );
+
+    let res = app
+        .client
+        .post(app.url(&format!("/links/{}/click", link.id)))
+        .send()
+        .await
+        .expect("POST /links/{id}/click");
+    assert_eq!(
+        res.status(),
+        reqwest::StatusCode::NO_CONTENT,
+        "setup: counting a click should return 204"
+    );
+
+    put_link(
+        &app,
+        link.id,
+        &serde_json::json!({ "title": "Edited after click" }),
+    )
+    .await;
+
+    let frame = frames.next_frame("the updated frame for the edit").await;
+
+    assert_eq!(frame.name, "updated");
+    assert!(
+        frame.data.contains("Edited after click"),
+        "the first frame must be the edit's, so the click broadcast nothing, got: {}",
+        frame.data
     );
 }

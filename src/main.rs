@@ -1,10 +1,14 @@
-//! Process entry point: configuration, pool, migrations, serve.
+//! Process entry point: configuration, pool, migrations, event listener, serve.
 //! All routing lives in [`internal_dashboard::build_router`].
 
 use std::{fmt::Display, str::FromStr, time::Duration};
 
-use internal_dashboard::{build_router, events::AppState};
-use sqlx::postgres::PgPoolOptions;
+use internal_dashboard::{
+    build_router,
+    events::{self, AppState},
+};
+use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
+use tokio_util::sync::CancellationToken;
 use tracing_subscriber::EnvFilter;
 
 /// Parse a numeric setting, falling back to `default` when it is unset.
@@ -34,6 +38,24 @@ where
     setting(key, std::env::var(key).ok().as_deref(), default)
 }
 
+/// Wait for SIGTERM (Kubernetes) or Ctrl-C, then cancel `token` so readiness
+/// fails, SSE streams end and the server starts draining.
+async fn shutdown_signal(token: CancellationToken) {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut sigterm = signal(SignalKind::terminate()).expect("install the SIGTERM handler");
+    tokio::select! {
+        _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
+        res = tokio::signal::ctrl_c() => {
+            if let Err(e) = res {
+                tracing::warn!(error = %e, "failed to listen for Ctrl-C");
+            }
+            tracing::info!("received Ctrl-C, shutting down");
+        }
+    }
+    token.cancel();
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = dotenvy::dotenv();
@@ -59,15 +81,28 @@ async fn main() -> anyhow::Result<()> {
         .connect(&database_url)
         .await?;
 
+    // Replicas starting at once are fine: sqlx holds a Postgres advisory lock
+    // while migrating, so one runs the migrations and the others wait.
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    let app = build_router(AppState::new(pool));
+    // pgbouncer in transaction mode cannot LISTEN, so the listener may need a direct URL.
+    let listen_options = match std::env::var("DATABASE_LISTEN_URL") {
+        Ok(database_listen_url) => database_listen_url.parse::<PgConnectOptions>()?,
+        Err(_) => (*pool.connect_options()).clone(),
+    };
+
+    let state = AppState::new(pool);
+    let shutdown = state.shutdown.clone();
+    events::listen(&state, listen_options).await?;
+    let app = build_router(state);
 
     let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!("dashboard   http://{bind_addr}/");
     tracing::info!("docs        http://{bind_addr}/docs");
     tracing::info!("mcp         http://{bind_addr}/mcp");
-    axum::serve(listener, app).await?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal(shutdown))
+        .await?;
 
     Ok(())
 }

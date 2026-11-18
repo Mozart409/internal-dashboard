@@ -592,6 +592,9 @@ in {
           MCP_ALLOWED_HOSTS = concatMapStringsSep "," (h: h) cfg.mcpAllowedHosts;
         }
         // optionalAttrs db.createLocally {DATABASE_URL = localUrl;}
+        # LISTEN does not work through pgbouncer's transaction pooling, so the
+        # live-update listener connects to PostgreSQL's own socket.
+        // optionalAttrs (db.createLocally && bouncer.enable) {DATABASE_LISTEN_URL = socketUrl "/run/postgresql" 5432;}
         // optionalAttrs (!db.createLocally && db.url != null) {DATABASE_URL = db.url;}
         // cfg.environment;
 

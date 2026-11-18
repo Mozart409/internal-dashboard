@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::transport::streamable_http_server::{
-    StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+    StreamableHttpServerConfig, StreamableHttpService, session::never::NeverSessionManager,
 };
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use serde::{Deserialize, Serialize};
@@ -118,7 +118,6 @@ impl LinksServer {
 
     /// Add a new link to the dashboard.
     /// Validates the URL (must be http:// or https://) and required fields.
-    /// Publishes a `LinkEvent` so open browser tabs update live.
     #[tool(description = "Add a new link to the dashboard")]
     async fn add_link(&self, params: Parameters<AddLinkParams>) -> Result<String, String> {
         let mut new_link = NewLink {
@@ -135,18 +134,12 @@ impl LinksServer {
 
         // Create in database
         match db::create_link(&self.state.pool, &new_link).await {
-            Ok(link) => {
-                // Publish event so browser tabs update live
-                self.state
-                    .publish(crate::events::LinkEvent::Created(link.clone()));
-                Ok(serde_json::to_string(&link).unwrap_or_default())
-            }
+            Ok(link) => Ok(serde_json::to_string(&link).unwrap_or_default()),
             Err(e) => Err(format!("Failed to create link: {e}")),
         }
     }
 
     /// Update an existing link. Omitted fields keep their current value.
-    /// Publishes a `LinkEvent` so open browser tabs update live.
     #[tool(
         description = "Update an existing link by UUID. Only the fields you supply are changed; supplying tags replaces the existing tags"
     )]
@@ -167,18 +160,13 @@ impl LinksServer {
         }
 
         match db::update_link(&self.state.pool, id, &update).await {
-            Ok(Some(link)) => {
-                self.state
-                    .publish(crate::events::LinkEvent::Updated(link.clone()));
-                Ok(serde_json::to_string(&link).unwrap_or_default())
-            }
+            Ok(Some(link)) => Ok(serde_json::to_string(&link).unwrap_or_default()),
             Ok(None) => Err(format!("Link not found: {id}")),
             Err(e) => Err(format!("Failed to update link: {e}")),
         }
     }
 
     /// Delete a link by ID.
-    /// Publishes a `LinkEvent` so open browser tabs update live.
     #[tool(description = "Delete a link by UUID")]
     async fn delete_link(&self, params: Parameters<DeleteParams>) -> Result<String, String> {
         // Parse the UUID from the string
@@ -189,8 +177,6 @@ impl LinksServer {
         match db::delete_link(&self.state.pool, id).await {
             Ok(deleted) => {
                 if deleted {
-                    // Publish event so browser tabs update live
-                    self.state.publish(crate::events::LinkEvent::Deleted(id));
                     Ok(serde_json::json!({ "deleted": true }).to_string())
                 } else {
                     Err(format!("Link not found: {id}"))
@@ -217,11 +203,24 @@ impl ServerHandler for LinksServer {}
 /// header -- so anything reached through a reverse proxy on a real hostname
 /// (Caddy, an MCP aggregator like axon-gateway) gets a 403 unless the
 /// fronting name is listed here.
+///
+/// The service is stateless so any replica can serve any request: no session is
+/// created, `initialize` carries no `mcp-session-id` back, and every reply is a
+/// plain `application/json` body (a tool that streams notifications first falls
+/// back to SSE). rmcp does not require per-request protocol metadata by
+/// default, so a client that sends `mcp-protocol-version` after `initialize`,
+/// as real clients do, or omits it, works unchanged. The server-wide
+/// cancellation token is a child of the app's shutdown token, so in-flight
+/// streams end on SIGTERM.
 #[must_use]
-pub fn service(state: AppState) -> StreamableHttpService<LinksServer, LocalSessionManager> {
+pub fn service(state: AppState) -> StreamableHttpService<LinksServer, NeverSessionManager> {
+    let shutdown = state.shutdown.child_token();
     let handler = LinksServer::new(state);
-    let session_manager = Arc::new(LocalSessionManager::default());
-    let mut config = StreamableHttpServerConfig::default();
+    let session_manager = Arc::new(NeverSessionManager::default());
+    let mut config = StreamableHttpServerConfig::default()
+        .with_legacy_session_mode(false)
+        .with_json_response(true)
+        .with_cancellation_token(shutdown);
     if let Some(hosts) = parse_allowed_hosts(std::env::var("MCP_ALLOWED_HOSTS").ok().as_deref()) {
         config = config.with_allowed_hosts(hosts);
     }

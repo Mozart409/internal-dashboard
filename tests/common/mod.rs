@@ -10,7 +10,7 @@
 #![allow(dead_code)]
 
 use internal_dashboard::build_router;
-use internal_dashboard::events::AppState;
+use internal_dashboard::events::{self, AppState};
 use internal_dashboard::models::Link;
 use sqlx::PgPool;
 
@@ -19,6 +19,9 @@ pub struct TestApp {
     pub addr: String,
     pub client: reqwest::Client,
     pub pool: PgPool,
+    /// The state the router was built from; cancel `state.shutdown` (or call
+    /// [`TestApp::shutdown`]) to start a graceful shutdown.
+    pub state: AppState,
 }
 
 /// Serve the real router on an ephemeral port.
@@ -33,9 +36,15 @@ pub struct TestApp {
 ///     assert!(res.status().is_success());
 /// }
 /// ```
+///
+/// Calling it twice with `pool.clone()` gives two replicas on one database,
+/// each with its own listener, broadcast channel and shutdown token.
 pub async fn spawn(pool: PgPool) -> TestApp {
     let state = AppState::new(pool.clone());
-    let app = build_router(state);
+    events::listen(&state, (*pool.connect_options()).clone())
+        .await
+        .expect("listen for link events");
+    let app = build_router(state.clone());
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -50,10 +59,23 @@ pub async fn spawn(pool: PgPool) -> TestApp {
         addr: format!("http://{addr}"),
         client: reqwest::Client::new(),
         pool,
+        state,
+    }
+}
+
+impl Drop for TestApp {
+    /// End this replica's listener task (and its own connection) with the test.
+    fn drop(&mut self) {
+        self.state.shutdown.cancel();
     }
 }
 
 impl TestApp {
+    /// Start this replica's shutdown, as SIGTERM does in the binary.
+    pub fn shutdown(&self) {
+        self.state.shutdown.cancel();
+    }
+
     /// Absolute URL for a path, e.g. `app.url("/api/v1/links")`.
     #[must_use]
     pub fn url(&self, path: &str) -> String {

@@ -16,7 +16,11 @@ use crate::events::AppState;
 ///
 /// On each broadcast event, re-queries the full link list and renders it as HTML,
 /// emitting an SSE event with the event name (created/updated/deleted) and rendered markup.
+/// The events come from Postgres NOTIFY (see [`crate::events::listen`]), so a
+/// write on any replica reaches every connected browser.
 /// Broadcast receive errors (lagged subscribers) are gracefully skipped.
+/// The stream ends when the app starts shutting down, so the browser reconnects
+/// (the htmx sse extension retries) to a replica that is still up.
 /// The list keeps the sort order the client picked, read from its sort cookie
 /// at connect time; changing the sort reloads the page and so reconnects.
 ///
@@ -29,6 +33,7 @@ pub async fn events(
 ) -> Sse<impl futures::stream::Stream<Item = Result<Event, Infallible>>> {
     let pool = state.pool.clone();
     let rx = state.events.subscribe();
+    let shutdown = state.shutdown.clone();
     let sort = crate::ui::sort_cookie(&headers).unwrap_or_default();
 
     // `filter_map` wants a future yielding Option, not an Option of a future,
@@ -53,7 +58,7 @@ pub async fn events(
         }
     });
 
-    Sse::new(stream).keep_alive(KeepAlive::default())
+    Sse::new(stream.take_until(shutdown.cancelled_owned())).keep_alive(KeepAlive::default())
 }
 
 /// Router exposing the SSE endpoint at `GET /events`.

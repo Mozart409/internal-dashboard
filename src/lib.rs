@@ -28,6 +28,15 @@ async fn liveness() -> axum::Json<serde_json::Value> {
 async fn readiness(
     axum::extract::State(state): axum::extract::State<AppState>,
 ) -> (axum::http::StatusCode, axum::Json<serde_json::Value>) {
+    // Report not-ready as soon as shutdown starts, so Kubernetes drops the pod
+    // from the Service endpoints while it drains.
+    if state.shutdown.is_cancelled() {
+        return (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            axum::Json(serde_json::json!({ "status": "shutting down" })),
+        );
+    }
+
     match sqlx::query("select 1").execute(&state.pool).await {
         Ok(_) => (
             axum::http::StatusCode::OK,

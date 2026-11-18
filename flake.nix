@@ -67,6 +67,10 @@
         packages = {
           default = package;
           internal-dashboard = package;
+          image = import ./nix/image.nix {
+            inherit pkgs;
+            internal-dashboard = package;
+          };
           inherit toolchain;
         };
 

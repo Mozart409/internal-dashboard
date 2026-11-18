@@ -12,7 +12,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::error::AppError;
-use crate::events::{AppState, LinkEvent};
+use crate::events::AppState;
 use crate::models::{Link, LinkSort, NewLink, UpdateLink, is_http_url};
 
 /// Vendored htmx assets, embedded in the binary so the dashboard works with no
@@ -392,8 +392,7 @@ pub async fn create_link(
 ) -> Result<Markup, AppError> {
     new_link.validate()?;
 
-    let link = crate::db::create_link(&state.pool, &new_link).await?;
-    state.publish(LinkEvent::Created(link));
+    crate::db::create_link(&state.pool, &new_link).await?;
 
     let sort = sort_cookie(&headers).unwrap_or_default();
     let links = crate::db::list_links(&state.pool, None, sort).await?;
@@ -412,11 +411,9 @@ pub async fn update_link(
     Form(mut update): Form<UpdateLink>,
 ) -> Result<Markup, AppError> {
     update.validate()?;
-    let link = crate::db::update_link(&state.pool, id, &update)
+    crate::db::update_link(&state.pool, id, &update)
         .await?
         .ok_or(AppError::NotFound)?;
-
-    state.publish(LinkEvent::Updated(link));
 
     let sort = sort_cookie(&headers).unwrap_or_default();
     let links = crate::db::list_links(&state.pool, None, sort).await?;
@@ -437,8 +434,6 @@ pub async fn delete_link_handler(
     if !deleted {
         return Err(AppError::NotFound);
     }
-
-    state.publish(LinkEvent::Deleted(id));
 
     let sort = sort_cookie(&headers).unwrap_or_default();
     let links = crate::db::list_links(&state.pool, None, sort).await?;

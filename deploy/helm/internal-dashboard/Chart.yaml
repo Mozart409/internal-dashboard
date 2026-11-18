@@ -1,0 +1,13 @@
+apiVersion: v2
+name: internal-dashboard
+description: A Helm chart for internal-dashboard, a link dashboard with a REST API and an MCP endpoint, run as several replicas on one shared Postgres
+type: application
+version: 0.2.1
+appVersion: "0.2.1"
+kubeVersion: ">=1.27.0-0"
+home: https://github.com/Mozart409/internal-dashboard
+sources:
+  - https://github.com/Mozart409/internal-dashboard
+keywords:
+  - dashboard
+  - mcp

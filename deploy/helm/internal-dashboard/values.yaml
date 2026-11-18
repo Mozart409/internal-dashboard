@@ -1,0 +1,134 @@
+# Default values for the internal-dashboard chart.
+
+# High availability: at least 2 replicas. They share state only through
+# Postgres (changes fan out to every replica over LISTEN/NOTIFY) and the MCP
+# endpoint is stateless, so no session affinity is needed. The templates fail
+# below 2.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/mozart409/internal-dashboard
+  # Defaults to the chart appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+database:
+  # Secret holding the Postgres URL (becomes DATABASE_URL). Required.
+  existingSecret: ""
+  secretKey: database-url
+  # Optional key in the same Secret holding a URL for the LISTEN connection
+  # (becomes DATABASE_LISTEN_URL). Set it when database-url goes through a
+  # transaction-pooling proxy such as pgbouncer, where LISTEN does not work;
+  # it must reach Postgres directly. Empty: LISTEN uses database-url.
+  listenSecretKey: ""
+  # DB_MAX_CONNECTIONS. Each pod opens up to this many connections plus one
+  # for LISTEN, so size Postgres max_connections for replicas x (this + 1).
+  maxConnections: 10
+
+# RUST_LOG filter.
+logLevel: info
+
+mcp:
+  # The MCP endpoint rejects any non-loopback Host header with 403 unless it is
+  # allowed (MCP_ALLOWED_HOSTS). The chart allows the httpRoute hostnames and
+  # the in-cluster Service names; add anything else (another proxy or Gateway
+  # hostname) here.
+  extraAllowedHosts: []
+
+# Extra environment (list of EnvVar), for example DB_ACQUIRE_TIMEOUT_SECS.
+extraEnv: []
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+
+# The image is built from scratch and runs as nobody (65534).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+
+# SSE streams are long-lived. On shutdown the pod first sits in preStop (so the
+# endpoint is removed from Services and the Gateway), then gets SIGTERM, turns
+# not ready and closes its streams; the grace period must exceed both. The
+# image has no shell, so the delay is the native `sleep` handler, not an exec.
+preStopSleepSeconds: 5
+terminationGracePeriodSeconds: 30
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+# minAvailable 1 keeps one replica up through node drains.
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# CPU autoscaling (autoscaling/v2). When on, the Deployment omits `replicas`
+# and minReplicas must stay at 2 or more.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 4
+  targetCPUUtilizationPercentage: 80
+
+# Gateway API route (gateway.networking.k8s.io/v1). There is no Ingress. The app
+# has no authentication: keep it behind a Gateway or an auth proxy.
+httpRoute:
+  enabled: false
+  annotations: {}
+  # Required when enabled, for example:
+  #   - name: public-gateway
+  #     namespace: gateway-system
+  #     sectionName: https
+  parentRefs: []
+  # For example dashboard.homelab.internal.
+  hostnames: []
+  path: /
+  # Optional, for the long-lived /events stream: { request: 0s } disables the
+  # request timeout on implementations that support it.
+  timeouts: {}
+
+nodeSelector: {}
+tolerations: []
+
+# Replicas spread over nodes by default: a soft topology spread and a preferred
+# pod anti-affinity, both on kubernetes.io/hostname. Setting `affinity` or
+# `topologySpreadConstraints` replaces the matching default; `defaultSpread:
+# false` drops both defaults.
+defaultSpread: true
+affinity: {}
+# Example:
+#   - maxSkew: 1
+#     topologyKey: kubernetes.io/hostname
+#     whenUnsatisfiable: ScheduleAnyway
+#     labelSelector:
+#       matchLabels:
+#         app.kubernetes.io/name: internal-dashboard
+topologySpreadConstraints: []

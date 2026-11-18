@@ -56,3 +56,28 @@ async fn health_probes_report_process_and_database_health(pool: PgPool) {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, r#"{"status":"ok"}"#);
 }
+
+#[sqlx::test]
+async fn readiness_fails_once_shutdown_starts_but_liveness_holds(pool: PgPool) {
+    let app = common::spawn(pool).await;
+
+    app.shutdown();
+
+    for path in ["/health", "/health/ready"] {
+        let (status, body) = app.get(path).await;
+        assert_eq!(
+            status,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "{path} while draining"
+        );
+        assert_eq!(body, r#"{"status":"shutting down"}"#);
+    }
+
+    let (status, body) = app.get("/health/live").await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "liveness must not flip while draining"
+    );
+    assert_eq!(body, r#"{"status":"ok"}"#);
+}

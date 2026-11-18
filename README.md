@@ -11,9 +11,11 @@ one shared data-access layer (`src/db.rs`):
 | **REST API** | axum handlers under `/api/v1`, documented automatically with utoipa |
 | **MCP server** | An `rmcp` streamable-HTTP endpoint at `/mcp`, so Claude can read and add links |
 
-Because every surface publishes to the same broadcast channel, a link added
-through the API or by Claude over MCP appears in open browser tabs immediately —
-no refresh.
+Changes are live across every replica. Each write fires a Postgres trigger that
+NOTIFYs the `link_events` channel, and every process listens on it and pushes to
+its own open browser tabs. A link added through the API or by Claude over MCP
+appears in open browser tabs immediately, on whichever replica they are served
+from, with no refresh.
 
 ## Requirements
 
@@ -103,6 +105,17 @@ straight against PostgreSQL and one through pgbouncer. It needs a Linux
 builder, so it is only exposed on Linux — **and it has not been run yet**,
 since the machine this module was written on has none.
 
+## Deploying on Kubernetes
+
+The image is a scratch OCI image built from `nix/image.nix`: `nix build
+.#internal-dashboard-image` from the repo root, or `.#image` in this directory's
+flake. The Helm chart in `deploy/helm/internal-dashboard` runs it with at least
+two replicas against one PostgreSQL. The database URL goes in a Secret under the
+key `database-url`. See the chart's README for install, sizing and the HA
+guarantees. `just dashboard-deploy-check` validates the chart.
+
+Replicas share no state except PostgreSQL, so no session affinity is needed.
+
 ## Quickstart
 
 ```sh
@@ -124,14 +137,14 @@ Then open <http://127.0.0.1:3000>.
 | `GET /` | Dashboard: add-link form, filter form, live link list |
 | `GET /links/{id}/edit` | Edit page for one link |
 | `POST /links`, `PUT /links/{id}`, `DELETE /links/{id}` | HTMX form targets, return HTML fragments |
-| `GET /events` | SSE stream of `created` / `updated` / `deleted` events |
+| `GET /events` | SSE stream of `created` / `updated` / `deleted` events; ends on shutdown so clients reconnect elsewhere |
 | `GET /api/v1/links` | List links; supports `?tag=` and `?q=` |
 | `GET/POST/PUT/DELETE /api/v1/links[/{id}]` | JSON CRUD |
 | `GET /docs/openapi.json` | Generated OpenAPI 3.1 document |
 | `GET /docs` | Scalar API reference |
 | `GET /health` | Health check; checks PostgreSQL |
 | `GET /health/live` | Liveness probe |
-| `GET /health/ready` | Readiness probe; checks PostgreSQL |
+| `GET /health/ready` | Readiness probe; checks PostgreSQL. Returns 503 once shutdown has begun |
 | `POST/GET /mcp` | MCP streamable-HTTP endpoint |
 
 ## Connecting Claude to the MCP server
@@ -172,9 +185,10 @@ Read from the environment, or from `.env` in the working directory:
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATABASE_URL` | `postgres://dashboard:dashboard@localhost:5434/dashboard` | Connection string |
+| `DATABASE_LISTEN_URL` | `DATABASE_URL` | Connection for the live-update LISTEN. Set it when `DATABASE_URL` goes through pgbouncer in transaction mode, which cannot LISTEN |
 | `BIND_ADDR` | `127.0.0.1:3000` | Listen address |
 | `RUST_LOG` | `internal_dashboard=debug,tower_http=debug,info` | Log filter |
-| `DB_MAX_CONNECTIONS` | `10` | Pool size |
+| `DB_MAX_CONNECTIONS` | `10` | Pool size. The live-update listener uses one extra connection outside the pool |
 | `DB_ACQUIRE_TIMEOUT_SECS` | `5` | How long a request waits for a pooled connection |
 
 A malformed numeric value fails startup rather than falling back to the
