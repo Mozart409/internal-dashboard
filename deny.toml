@@ -9,7 +9,12 @@ version = 2
 # Fail on crates pulled from a yanked version.
 yanked = "deny"
 # RUSTSEC ids to consciously ignore (with a reason) go here.
-ignore = []
+# RUSTSEC-2026-0543 (chrono, unmaintained): every version is affected and no
+# safe upgrade exists; chrono is used directly and via sqlx/rmcp/schemars/utoipa.
+# Revisit when the advisory is withdrawn or those move to jiff/time.
+ignore = [
+  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained, no safe upgrade; also pulled in by sqlx/rmcp/schemars" },
+]
 
 [licenses]
 version = 2
