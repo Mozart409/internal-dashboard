@@ -1,0 +1,194 @@
+name: Release
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish
+        required: true
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: write
+  packages: write
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release-tag: ${{ steps.set-tag.outputs.release_tag }}
+      version: ${{ steps.set-tag.outputs.version }}
+    steps:
+      - id: set-tag
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
+            if [ -z "$TAG" ]; then
+              echo "tag input required" >&2
+              exit 1
+            fi
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "release_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.set-tag.outputs.release_tag }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/bin" kubeconform
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      # The tag, Cargo.toml and Chart.yaml must agree.
+      - name: Check the chart and versions
+        env:
+          VERSION: ${{ steps.set-tag.outputs.version }}
+        run: scripts/chart-check.sh "$VERSION"
+
+      - name: Extract release notes
+        env:
+          RELEASE_TAG: ${{ steps.set-tag.outputs.release_tag }}
+        run: |
+          # The section under `## <tag> - <date>`, up to the next `- - -` line.
+          awk -v tag="$RELEASE_TAG" '
+            /^## / { if (found) exit; if ($2 == tag) { found = 1; next } }
+            found && /^- - -$/ { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.set-tag.outputs.release_tag }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists"
+          elif grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RUNNER_TEMP/notes.md"
+          else
+            gh release create "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
+
+  build-image:
+    needs: prepare-release
+    timeout-minutes: 60
+    env:
+      RELEASE_TAG: ${{ needs.prepare-release.outputs.release-tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # main
+
+      - name: Build the container image
+        run: nix build .#image -L
+
+      # dockerTools.buildImage yields a gzipped docker-archive; buildah wants it plain.
+      - name: Unpack the image archive
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: gunzip -c result > "image-${ARCH}.tar"
+
+      - name: Upload container image
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.arch }}
+          path: image-${{ matrix.arch }}.tar
+          retention-days: 1
+
+  publish-image:
+    needs:
+      - prepare-release
+      - build-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download container images
+        uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        env:
+          REPO_RAW: ${{ github.repository }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          buildah manifest create internal-dashboard
+          buildah manifest add internal-dashboard docker-archive:image-amd64/image-amd64.tar
+          buildah manifest add internal-dashboard docker-archive:image-arm64/image-arm64.tar
+
+          for TAG in "${VERSION}" "latest"; do
+            buildah manifest push --all internal-dashboard "docker://ghcr.io/${REPO_RAW,,}:${TAG}"
+          done
+
+  publish-chart:
+    needs:
+      - prepare-release
+      - publish-image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare-release.outputs.release-tag }}
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Package the chart
+        run: helm package deploy/helm/internal-dashboard --destination dist
+
+      - name: Push the chart to GHCR
+        env:
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io --username "$ACTOR" --password-stdin
+          helm push "dist/internal-dashboard-${VERSION}.tgz" "oci://ghcr.io/${OWNER,,}/charts"
+
+      - name: Attach the chart to the release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.prepare-release.outputs.release-tag }}
+          VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: gh release upload "$RELEASE_TAG" "dist/internal-dashboard-${VERSION}.tgz" --clobber

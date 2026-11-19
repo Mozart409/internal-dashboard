@@ -1,6 +1,6 @@
 # internal-dashboard
 
-[![CI status](https://ci.homelab.internal/api/badges/2/status.svg)](https://ci.homelab.internal/repos/2)
+[![CI](https://github.com/Mozart409/internal-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Mozart409/internal-dashboard/actions/workflows/ci.yml)
 
 A small internal dashboard for manually curating links. Three surfaces sit on
 one shared data-access layer (`src/db.rs`):
@@ -115,6 +115,26 @@ key `database-url`. See the chart's README for install, sizing and the HA
 guarantees. `just dashboard-deploy-check` validates the chart.
 
 Replicas share no state except PostgreSQL, so no session affinity is needed.
+
+## Releases
+
+A `vX.Y.Z` tag starts the release workflow. It creates the GitHub release with
+the CHANGELOG notes and publishes:
+
+- the image `ghcr.io/mozart409/internal-dashboard`, tagged `X.Y.Z` and `latest`
+- the Helm chart `oci://ghcr.io/mozart409/charts/internal-dashboard`, also
+  attached to the release as a `.tgz`
+
+Install a release with:
+
+```sh
+helm install dashboard oci://ghcr.io/mozart409/charts/internal-dashboard --version X.Y.Z
+```
+
+There are two ways to cut a release. In the standalone clone, run
+`./release.sh`. In the monorepo, run `just release-bump internal-dashboard
+<version>`, then `just release-github internal-dashboard <version>`. Both keep
+the chart's `version` and `appVersion` equal to the crate version.
 
 ## Quickstart
 

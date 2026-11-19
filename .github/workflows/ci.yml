@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    name: Tests, Format & Clippy
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.4
+        env:
+          POSTGRES_USER: dashboard
+          POSTGRES_PASSWORD: dashboard
+          POSTGRES_DB: dashboard
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dashboard"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SQLX_OFFLINE: "true"
+      DATABASE_URL: postgres://dashboard:dashboard@localhost:5432/dashboard
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+        with:
+          components: clippy, rustfmt
+
+      # .cargo/config.toml links with mold on Linux.
+      - name: Install mold
+        uses: rui314/setup-mold@v1
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run clippy (pedantic, warnings denied)
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Run tests
+        run: cargo test --locked
+
+      - name: Install sqlx-cli
+        uses: taiki-e/install-action@v2.87.29
+        with:
+          tool: sqlx-cli
+
+      - name: Apply migrations
+        run: sqlx migrate run
+
+      - name: Check the sqlx query cache is current
+        env:
+          SQLX_OFFLINE: "false"
+        run: cargo sqlx prepare --check
+
+  supply-chain:
+    name: Audit & Deny
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v2
+
+      - name: Install cargo-deny and cargo-audit
+        uses: taiki-e/install-action@v2.87.29
+        with:
+          tool: cargo-deny,cargo-audit
+
+      - name: Run cargo deny
+        run: cargo deny check
+
+      - name: Run cargo audit
+        run: cargo audit
+
+  helm:
+    name: Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          mkdir -p "$RUNNER_TEMP/bin"
+          curl -fsSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/bin" kubeconform
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Check the chart
+        run: scripts/chart-check.sh
+
+  nix:
+    name: Nix image build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # main
+
+      - name: Build the container image
+        run: nix build .#image -L

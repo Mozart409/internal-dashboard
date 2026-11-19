@@ -69,23 +69,39 @@ just dashboard-deploy-check     # validate the Helm chart (kubeconform needs net
   lines between the start and end markers.
 - `cog verify` (conventional commits) runs on commit-msg via the root lefthook.
 
-## CI (Woodpecker, decommissioned)
+## CI (GitHub Actions)
 
-`.woodpecker.yaml` is kept for reference but is inert, and it still refers to
-the removed per-project flake (`nix develop .`, `.#checks`).
+The public repo (`Mozart409/internal-dashboard`) runs three workflows:
 
-- Runs on push and PR. Nix-based with Crane for cached dependency builds.
-- Uses `mold` linker on Linux for faster builds (`.cargo/config.toml`).
-- `SQLX_OFFLINE=true` in CI — compiles against `.sqlx/` cache only.
-- Database: `postgres://dashboard:dashboard@postgres:5432/dashboard` (port
-  **5432** in CI, **5434** locally — compose maps 5434:5432).
-- Postgres runs with `fsync=off` for test speed.
+- `ci.yml` runs on push to main and on pull requests: fmt, clippy, tests
+  against a Postgres service, `sqlx prepare --check`, cargo-deny/audit, the
+  Helm chart check (`scripts/chart-check.sh`) and `nix build .#image`.
+- `release.yml` runs on a `vX.Y.Z` tag: it checks the tag against the crate
+  and chart versions, creates the GitHub release from the CHANGELOG section,
+  and pushes the image and the Helm chart to GHCR.
+- `cleanup-ghcr.yml` keeps the 5 newest image releases on GHCR.
+
+Details that matter when you change CI:
+
+- Postgres is a service container on port **5432** in CI. Locally it is
+  **5434** (compose maps 5434:5432).
+- `SQLX_OFFLINE=true` when compiling, so it builds against the `.sqlx/` cache
+  only.
+- `mold` is installed in CI and used as the linker (`.cargo/config.toml`).
 
 ## Git workflow
 
 - **Conventional commits** enforced by cocogitto (`cog verify`).
-- Releases (`cog bump`) and the github mirror push are gone with the project
-  `cog.toml` and `justfile`; the root `cog.toml` has no bump hooks.
+- **Releases in the monorepo:** `just release-bump internal-dashboard <version>`
+  bumps Cargo.toml, Cargo.lock, CHANGELOG and Chart.yaml and commits on main.
+  Then `just release-github internal-dashboard <version>` exports to GitHub and
+  pushes the signed `vX.Y.Z` tag that starts `release.yml`.
+- **Releases in the standalone GitHub clone:** `./release.sh` runs
+  `cog bump --auto`. The `pre_bump_hooks` in `cog.toml` sync Cargo.toml,
+  Cargo.lock and Chart.yaml, then it pushes the bump commit and the tag.
+- **Chart.yaml `version` and `appVersion` always equal the crate version.**
+  Both bump paths sync them. CI and release fail on drift
+  (`scripts/chart-check.sh`).
 
 ## Nix
 
