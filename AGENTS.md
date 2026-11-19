@@ -78,7 +78,9 @@ The public repo (`Mozart409/internal-dashboard`) runs three workflows:
   Helm chart check (`scripts/chart-check.sh`) and `nix build .#image`.
 - `release.yml` runs on a `vX.Y.Z` tag: it checks the tag against the crate
   and chart versions, creates the GitHub release from the CHANGELOG section,
-  and pushes the image and the Helm chart to GHCR.
+  and pushes the image and the Helm chart to GHCR. Each image is smoke-tested
+  before anything is published: `scripts/image-smoke.sh` runs it against
+  Postgres, and `/health/ready`, `/health/live` and `/` must answer.
 - `cleanup-ghcr.yml` keeps the 5 newest image releases on GHCR.
 
 Details that matter when you change CI:

@@ -122,6 +122,15 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: gunzip -c result > "image-${ARCH}.tar"
 
+      - name: Load the image
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: docker load -i "image-${ARCH}.tar"
+
+      # Starts the image against Postgres; blocks publishing if it does not serve.
+      - name: Smoke test the image
+        run: scripts/image-smoke.sh internal-dashboard:latest
+
       - name: Upload container image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
