@@ -24,11 +24,19 @@
     flake-parts,
     ...
   }: let
-    # Latest stable, pinned by flake.lock rather than a version literal.
-    # Keep the component list equal to `build` in yggdrasil's
-    # rust/toolchain.nix (the root's `rust-toolchain-sync` asserts it).
+    # The pinned toolchain: ./rust-toolchain.toml is a byte-identical copy of
+    # the yggdrasil root's; its channel is resolved with the same manifest
+    # sha256 as the monorepo's rust/toolchain.nix (the root's
+    # `rust-toolchain-sync` asserts the store paths agree). Keep the component
+    # list equal to `build` in yggdrasil's rust/toolchain.nix.
+    manifestFor = system:
+      inputs.fenix.packages.${system}.fromToolchainName {
+        name = (builtins.fromTOML (builtins.readFile ./rust-toolchain.toml)).toolchain.channel;
+        sha256 = "sha256-MFHoWVcPZKjFrLnQnodCXbUsfZcofGfo9tV9fTTvklg=";
+      };
+
     toolchainFor = system:
-      inputs.fenix.packages.${system}.stable.withComponents [
+      (manifestFor system).withComponents [
         "cargo"
         "clippy"
         "rust-src"
@@ -91,9 +99,9 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             # keep-sorted start
+            (manifestFor system).rust-analyzer
             cargo-edit
             cargo-watch
-            inputs.fenix.packages.${system}.stable.rust-analyzer
             mold
             podman-compose
             postgresql_18
