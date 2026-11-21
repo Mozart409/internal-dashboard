@@ -5,8 +5,8 @@
 #   import ./rust/internal-dashboard/nix/checks.nix {inherit pkgs crane toolchain testPostgres;}
 #
 # As Nix builds they are cached by their inputs: a push that does not change
-# the source finds them already in the store, and the rust-ci pre-push gate
-# (the root's legacyPackages.rust-ci.internal-dashboard) costs an evaluation
+# the source finds them already in the store, and the pre-push rust-gate
+# (the root's legacyPackages.rust-gate) costs an evaluation
 # instead of a compile. The standalone flake does not use this file.
 #
 # Returns `checks` and `cargoArtifacts`.
